@@ -102,7 +102,7 @@ export class AclCtrl {
     }
 
     return this.backendSrv.post(`/api/dashboards/id/${this.dashboard.id}/acl`, {
-      items: updated
+      items: updated,
     });
   }
 
@@ -183,9 +183,9 @@ export function dashAclModal() {
     bindToController: true,
     controllerAs: 'ctrl',
     scope: {
-      dashboard: "=",
-      meta: "="
-    }
+      dashboard: '=',
+      meta: '=',
+    },
   };
 }
 
