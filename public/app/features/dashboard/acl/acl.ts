@@ -101,9 +101,13 @@ export class AclCtrl {
       });
     }
 
-    return this.backendSrv.post(`/api/dashboards/id/${this.dashboard.id}/acl`, {
-      items: updated,
-    });
+    return this.backendSrv
+      .post(`/api/dashboards/id/${this.dashboard.id}/acl`, {
+        items: updated,
+      })
+      .then(() => {
+        this.canUpdate = false;
+      });
   }
 
   typeChanged() {
