@@ -1,14 +1,19 @@
 package migrator
 
-import "fmt"
+import (
+	"fmt"
+	"github.com/mattn/go-sqlite3"
+	"xorm.io/xorm"
+)
 
 type Sqlite3 struct {
 	BaseDialect
 }
 
-func NewSqlite3Dialect() *Sqlite3 {
+func NewSqlite3Dialect(engine *xorm.Engine) *Sqlite3 {
 	d := Sqlite3{}
 	d.BaseDialect.dialect = &d
+	d.BaseDialect.engine = engine
 	d.BaseDialect.driverName = SQLITE
 	return &d
 }
@@ -21,10 +26,6 @@ func (db *Sqlite3) Quote(name string) string {
 	return "`" + name + "`"
 }
 
-func (db *Sqlite3) QuoteStr() string {
-	return "`"
-}
-
 func (db *Sqlite3) AutoIncrStr() string {
 	return "AUTOINCREMENT"
 }
@@ -34,6 +35,10 @@ func (db *Sqlite3) BooleanStr(value bool) string {
 		return "1"
 	}
 	return "0"
+}
+
+func (db *Sqlite3) DateTimeFunc(value string) string {
+	return "datetime(" + value + ")"
 }
 
 func (db *Sqlite3) SqlType(c *Column) string {
@@ -62,9 +67,10 @@ func (db *Sqlite3) SqlType(c *Column) string {
 	}
 }
 
-func (db *Sqlite3) TableCheckSql(tableName string) (string, []interface{}) {
-	args := []interface{}{tableName}
-	return "SELECT name FROM sqlite_master WHERE type='table' and name = ?", args
+func (db *Sqlite3) IndexCheckSql(tableName, indexName string) (string, []interface{}) {
+	args := []interface{}{tableName, indexName}
+	sql := "SELECT 1 FROM " + db.Quote("sqlite_master") + " WHERE " + db.Quote("type") + "='index' AND " + db.Quote("tbl_name") + "=? AND " + db.Quote("name") + "=?"
+	return sql, args
 }
 
 func (db *Sqlite3) DropIndexSql(tableName string, index *Index) string {
@@ -72,4 +78,33 @@ func (db *Sqlite3) DropIndexSql(tableName string, index *Index) string {
 	//var unique string
 	idxName := index.XName(tableName)
 	return fmt.Sprintf("DROP INDEX %v", quote(idxName))
+}
+
+func (db *Sqlite3) CleanDB() error {
+	return nil
+}
+
+func (db *Sqlite3) isThisError(err error, errcode int) bool {
+	if driverErr, ok := err.(sqlite3.Error); ok {
+		if int(driverErr.ExtendedCode) == errcode {
+			return true
+		}
+	}
+
+	return false
+}
+
+func (db *Sqlite3) ErrorMessage(err error) string {
+	if driverErr, ok := err.(sqlite3.Error); ok {
+		return driverErr.Error()
+	}
+	return ""
+}
+
+func (db *Sqlite3) IsUniqueConstraintViolation(err error) bool {
+	return db.isThisError(err, int(sqlite3.ErrConstraintUnique))
+}
+
+func (db *Sqlite3) IsDeadlock(err error) bool {
+	return false // No deadlock
 }

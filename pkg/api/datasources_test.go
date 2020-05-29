@@ -2,17 +2,12 @@ package api
 
 import (
 	"encoding/json"
-	"net/http"
-	"net/http/httptest"
-	"path/filepath"
 	"testing"
 
 	"github.com/grafana/grafana/pkg/models"
-	macaron "gopkg.in/macaron.v1"
+	"github.com/stretchr/testify/assert"
 
-	"github.com/go-macaron/session"
 	"github.com/grafana/grafana/pkg/bus"
-	"github.com/grafana/grafana/pkg/middleware"
 	. "github.com/smartystreets/goconvey/convey"
 )
 
@@ -52,90 +47,117 @@ func TestDataSourcesProxy(t *testing.T) {
 				So(respJSON[3]["name"], ShouldEqual, "ZZZ")
 			})
 		})
-	})
-}
 
-func loggedInUserScenario(desc string, url string, fn scenarioFunc) {
-	loggedInUserScenarioWithRole(desc, "GET", url, url, models.ROLE_EDITOR, fn)
-}
-
-func loggedInUserScenarioWithRole(desc string, method string, url string, routePattern string, role models.RoleType, fn scenarioFunc) {
-	Convey(desc+" "+url, func() {
-		defer bus.ClearBusHandlers()
-
-		sc := &scenarioContext{
-			url: url,
-		}
-		viewsPath, _ := filepath.Abs("../../public/views")
-
-		sc.m = macaron.New()
-		sc.m.Use(macaron.Renderer(macaron.RenderOptions{
-			Directory: viewsPath,
-			Delims:    macaron.Delims{Left: "[[", Right: "]]"},
-		}))
-
-		sc.m.Use(middleware.GetContextHandler())
-		sc.m.Use(middleware.Sessioner(&session.Options{}))
-
-		sc.defaultHandler = wrap(func(c *middleware.Context) Response {
-			sc.context = c
-			sc.context.UserId = TestUserID
-			sc.context.OrgId = TestOrgID
-			sc.context.OrgRole = role
-			if sc.handlerFunc != nil {
-				return sc.handlerFunc(sc.context)
-			}
-
-			return nil
+		Convey("Should be able to save a data source", func() {
+			loggedInUserScenario("When calling DELETE on non-existing", "/api/datasources/name/12345", func(sc *scenarioContext) {
+				sc.handlerFunc = DeleteDataSourceByName
+				sc.fakeReqWithParams("DELETE", sc.url, map[string]string{}).exec()
+				So(sc.resp.Code, ShouldEqual, 404)
+			})
 		})
-
-		switch method {
-		case "GET":
-			sc.m.Get(routePattern, sc.defaultHandler)
-		case "DELETE":
-			sc.m.Delete(routePattern, sc.defaultHandler)
-		}
-
-		fn(sc)
 	})
 }
 
-func (sc *scenarioContext) fakeReq(method, url string) *scenarioContext {
-	sc.resp = httptest.NewRecorder()
-	req, err := http.NewRequest(method, url, nil)
-	So(err, ShouldBeNil)
-	sc.req = req
+// Adding data sources with invalid URLs should lead to an error.
+func TestAddDataSource_InvalidURL(t *testing.T) {
+	defer bus.ClearBusHandlers()
 
-	return sc
+	sc := setupScenarioContext("/api/datasources")
+	// TODO: Make this an argument to setupScenarioContext
+	sc.t = t
+
+	sc.m.Post(sc.url, Wrap(func(c *models.ReqContext) Response {
+		return AddDataSource(c, models.AddDataSourceCommand{
+			Name: "Test",
+			Url:  "invalid:url",
+		})
+	}))
+
+	sc.fakeReqWithParams("POST", sc.url, map[string]string{}).exec()
+
+	assert.Equal(t, 400, sc.resp.Code)
 }
 
-func (sc *scenarioContext) fakeReqWithParams(method, url string, queryParams map[string]string) *scenarioContext {
-	sc.resp = httptest.NewRecorder()
-	req, err := http.NewRequest(method, url, nil)
-	q := req.URL.Query()
-	for k, v := range queryParams {
-		q.Add(k, v)
-	}
-	req.URL.RawQuery = q.Encode()
-	So(err, ShouldBeNil)
-	sc.req = req
+// Adding data sources with URLs not specifying protocol should work.
+func TestAddDataSource_URLWithoutProtocol(t *testing.T) {
+	defer bus.ClearBusHandlers()
 
-	return sc
+	const name = "Test"
+	const url = "localhost:5432"
+
+	// Stub handler
+	bus.AddHandler("sql", func(cmd *models.AddDataSourceCommand) error {
+		assert.Equal(t, name, cmd.Name)
+		assert.Equal(t, url, cmd.Url)
+
+		cmd.Result = &models.DataSource{}
+		return nil
+	})
+
+	sc := setupScenarioContext("/api/datasources")
+	// TODO: Make this an argument to setupScenarioContext
+	sc.t = t
+
+	sc.m.Post(sc.url, Wrap(func(c *models.ReqContext) Response {
+		return AddDataSource(c, models.AddDataSourceCommand{
+			Name: name,
+			Url:  url,
+		})
+	}))
+
+	sc.fakeReqWithParams("POST", sc.url, map[string]string{}).exec()
+
+	assert.Equal(t, 200, sc.resp.Code)
 }
 
-type scenarioContext struct {
-	m              *macaron.Macaron
-	context        *middleware.Context
-	resp           *httptest.ResponseRecorder
-	handlerFunc    handlerFunc
-	defaultHandler macaron.Handler
-	req            *http.Request
-	url            string
+// Updating data sources with invalid URLs should lead to an error.
+func TestUpdateDataSource_InvalidURL(t *testing.T) {
+	defer bus.ClearBusHandlers()
+
+	sc := setupScenarioContext("/api/datasources/1234")
+	// TODO: Make this an argument to setupScenarioContext
+	sc.t = t
+
+	sc.m.Put(sc.url, Wrap(func(c *models.ReqContext) Response {
+		return AddDataSource(c, models.AddDataSourceCommand{
+			Name: "Test",
+			Url:  "invalid:url",
+		})
+	}))
+
+	sc.fakeReqWithParams("PUT", sc.url, map[string]string{}).exec()
+
+	assert.Equal(t, 400, sc.resp.Code)
 }
 
-func (sc *scenarioContext) exec() {
-	sc.m.ServeHTTP(sc.resp, sc.req)
-}
+// Updating data sources with URLs not specifying protocol should work.
+func TestUpdateDataSource_URLWithoutProtocol(t *testing.T) {
+	defer bus.ClearBusHandlers()
 
-type scenarioFunc func(c *scenarioContext)
-type handlerFunc func(c *middleware.Context) Response
+	const name = "Test"
+	const url = "localhost:5432"
+
+	// Stub handler
+	bus.AddHandler("sql", func(cmd *models.AddDataSourceCommand) error {
+		assert.Equal(t, name, cmd.Name)
+		assert.Equal(t, url, cmd.Url)
+
+		cmd.Result = &models.DataSource{}
+		return nil
+	})
+
+	sc := setupScenarioContext("/api/datasources/1234")
+	// TODO: Make this an argument to setupScenarioContext
+	sc.t = t
+
+	sc.m.Put(sc.url, Wrap(func(c *models.ReqContext) Response {
+		return AddDataSource(c, models.AddDataSourceCommand{
+			Name: name,
+			Url:  url,
+		})
+	}))
+
+	sc.fakeReqWithParams("PUT", sc.url, map[string]string{}).exec()
+
+	assert.Equal(t, 200, sc.resp.Code)
+}

@@ -1,154 +1,125 @@
 import _ from 'lodash';
-import coreModule from 'app/core/core_module';
+
 import impressionSrv from 'app/core/services/impression_srv';
 import store from 'app/core/store';
 import { contextSrv } from 'app/core/services/context_srv';
+import { hasFilters } from 'app/features/search/utils';
+import { SECTION_STORAGE_KEY } from 'app/features/search/constants';
+import { DashboardSection, DashboardSearchItemType, DashboardSearchHit, SearchLayout } from 'app/features/search/types';
+import { backendSrv } from './backend_srv';
+
+interface Sections {
+  [key: string]: Partial<DashboardSection>;
+}
 
 export class SearchSrv {
-  recentIsOpen: boolean;
-  starredIsOpen: boolean;
-
-  /** @ngInject */
-  constructor(private backendSrv, private $q) {
-    this.recentIsOpen = store.getBool('search.sections.recent', true);
-    this.starredIsOpen = store.getBool('search.sections.starred', true);
-  }
-
-  private getRecentDashboards(sections) {
-    return this.queryForRecentDashboards().then(result => {
+  private getRecentDashboards(sections: DashboardSection[] | any) {
+    return this.queryForRecentDashboards().then((result: any[]) => {
       if (result.length > 0) {
         sections['recent'] = {
           title: 'Recent',
-          icon: 'fa fa-clock-o',
+          icon: 'clock-nine',
           score: -1,
-          removable: true,
-          expanded: this.recentIsOpen,
-          toggle: this.toggleRecent.bind(this),
+          expanded: store.getBool(`${SECTION_STORAGE_KEY}.recent`, true),
           items: result,
+          type: DashboardSearchItemType.DashFolder,
         };
       }
     });
   }
 
-  private queryForRecentDashboards() {
-    var dashIds = _.take(impressionSrv.getDashboardOpened(), 5);
+  private queryForRecentDashboards(): Promise<DashboardSearchHit[]> {
+    const dashIds: number[] = _.take(impressionSrv.getDashboardOpened(), 30);
     if (dashIds.length === 0) {
       return Promise.resolve([]);
     }
 
-    return this.backendSrv.search({ dashboardIds: dashIds }).then(result => {
+    return backendSrv.search({ dashboardIds: dashIds }).then(result => {
       return dashIds
-        .map(orderId => {
-          return _.find(result, { id: orderId });
-        })
-        .filter(hit => hit && !hit.isStarred)
-        .map(hit => {
-          return this.transformToViewModel(hit);
-        });
+        .map(orderId => result.find(result => result.id === orderId))
+        .filter(hit => hit && !hit.isStarred) as DashboardSearchHit[];
     });
   }
 
-  private toggleRecent(section) {
-    this.recentIsOpen = section.expanded = !section.expanded;
-    store.set('search.sections.recent', this.recentIsOpen);
-
-    if (!section.expanded || section.items.length) {
-      return Promise.resolve(section);
-    }
-
-    return this.queryForRecentDashboards().then(result => {
-      section.items = result;
-      return Promise.resolve(section);
-    });
-  }
-
-  private toggleStarred(section) {
-    this.starredIsOpen = section.expanded = !section.expanded;
-    store.set('search.sections.starred', this.starredIsOpen);
-    return Promise.resolve(section);
-  }
-
-  private getStarred(sections) {
+  private getStarred(sections: DashboardSection): Promise<any> {
     if (!contextSrv.isSignedIn) {
       return Promise.resolve();
     }
 
-    return this.backendSrv.search({ starred: true, limit: 5 }).then(result => {
+    return backendSrv.search({ starred: true, limit: 30 }).then(result => {
       if (result.length > 0) {
-        sections['starred'] = {
+        (sections as any)['starred'] = {
           title: 'Starred',
-          icon: 'fa fa-star-o',
+          icon: 'star',
           score: -2,
-          expanded: this.starredIsOpen,
-          toggle: this.toggleStarred.bind(this),
-          items: result.map(this.transformToViewModel),
+          expanded: store.getBool(`${SECTION_STORAGE_KEY}.starred`, true),
+          items: result,
+          type: DashboardSearchItemType.DashFolder,
         };
       }
     });
   }
 
-  private transformToViewModel(hit) {
-    hit.url = 'dashboard/db/' + hit.slug;
-    return hit;
-  }
-
-  search(options) {
-    let sections: any = {};
-    let promises = [];
-    let query = _.clone(options);
-    let hasFilters =
-      options.query ||
-      (options.tag && options.tag.length > 0) ||
-      options.starred ||
-      (options.folderIds && options.folderIds.length > 0);
-
-    if (!options.skipRecent && !hasFilters) {
-      promises.push(this.getRecentDashboards(sections));
-    }
-
-    if (!options.skipStarred && !hasFilters) {
-      promises.push(this.getStarred(sections));
-    }
+  search(options: any) {
+    const sections: any = {};
+    const promises = [];
+    const query = _.clone(options);
+    const filters = hasFilters(options) || query.folderIds?.length > 0;
 
     query.folderIds = query.folderIds || [];
-    if (!hasFilters) {
+
+    if (query.layout === SearchLayout.List) {
+      return backendSrv
+        .search({ ...query, type: DashboardSearchItemType.DashDB })
+        .then(results => (results.length ? [{ title: '', items: results }] : []));
+    }
+
+    if (!filters) {
       query.folderIds = [0];
     }
 
+    if (!options.skipRecent && !filters) {
+      promises.push(this.getRecentDashboards(sections));
+    }
+
+    if (!options.skipStarred && !filters) {
+      promises.push(this.getStarred(sections));
+    }
+
     promises.push(
-      this.backendSrv.search(query).then(results => {
+      backendSrv.search(query).then(results => {
         return this.handleSearchResult(sections, results);
       })
     );
 
-    return this.$q.all(promises).then(() => {
+    return Promise.all(promises).then(() => {
       return _.sortBy(_.values(sections), 'score');
     });
   }
 
-  private handleSearchResult(sections, results) {
+  private handleSearchResult(sections: Sections, results: DashboardSearchHit[]): any {
     if (results.length === 0) {
       return sections;
     }
 
     // create folder index
-    for (let hit of results) {
+    for (const hit of results) {
       if (hit.type === 'dash-folder') {
         sections[hit.id] = {
           id: hit.id,
+          uid: hit.uid,
           title: hit.title,
           expanded: false,
           items: [],
-          toggle: this.toggleFolder.bind(this),
-          url: `dashboards/folder/${hit.id}/${hit.slug}`,
-          slug: hit.slug,
-          icon: 'fa fa-folder',
+          url: hit.url,
+          icon: 'folder',
           score: _.keys(sections).length,
+          type: hit.type,
         };
       }
     }
 
-    for (let hit of results) {
+    for (const hit of results) {
       if (hit.type === 'dash-folder') {
         continue;
       }
@@ -158,22 +129,22 @@ export class SearchSrv {
         if (hit.folderId) {
           section = {
             id: hit.folderId,
+            uid: hit.folderUid,
             title: hit.folderTitle,
-            url: `dashboards/folder/${hit.folderId}/${hit.folderSlug}`,
-            slug: hit.slug,
+            url: hit.folderUrl,
             items: [],
-            icon: 'fa fa-folder-open',
-            toggle: this.toggleFolder.bind(this),
+            icon: 'folder-open',
             score: _.keys(sections).length,
+            type: DashboardSearchItemType.DashFolder,
           };
         } else {
           section = {
             id: 0,
-            title: 'Root',
+            title: 'General',
             items: [],
-            icon: 'fa fa-folder-open',
-            toggle: this.toggleFolder.bind(this),
+            icon: 'folder-open',
             score: _.keys(sections).length,
+            type: DashboardSearchItemType.DashFolder,
           };
         }
         // add section
@@ -181,31 +152,15 @@ export class SearchSrv {
       }
 
       section.expanded = true;
-      section.items.push(this.transformToViewModel(hit));
+      section.items && section.items.push(hit);
     }
-  }
-
-  private toggleFolder(section) {
-    section.expanded = !section.expanded;
-    section.icon = section.expanded ? 'fa fa-folder-open' : 'fa fa-folder';
-
-    if (section.items.length) {
-      return Promise.resolve(section);
-    }
-
-    let query = {
-      folderIds: [section.id],
-    };
-
-    return this.backendSrv.search(query).then(results => {
-      section.items = _.map(results, this.transformToViewModel);
-      return Promise.resolve(section);
-    });
   }
 
   getDashboardTags() {
-    return this.backendSrv.get('/api/dashboards/tags');
+    return backendSrv.get('/api/dashboards/tags');
+  }
+
+  getSortOptions() {
+    return backendSrv.get('/api/search/sorting');
   }
 }
-
-coreModule.service('searchSrv', SearchSrv);

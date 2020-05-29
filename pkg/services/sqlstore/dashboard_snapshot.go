@@ -4,7 +4,7 @@ import (
 	"time"
 
 	"github.com/grafana/grafana/pkg/bus"
-	m "github.com/grafana/grafana/pkg/models"
+	"github.com/grafana/grafana/pkg/models"
 	"github.com/grafana/grafana/pkg/setting"
 )
 
@@ -16,25 +16,28 @@ func init() {
 	bus.AddHandler("sql", DeleteExpiredSnapshots)
 }
 
-func DeleteExpiredSnapshots(cmd *m.DeleteExpiredSnapshotsCommand) error {
+// DeleteExpiredSnapshots removes snapshots with old expiry dates.
+// SnapShotRemoveExpired is deprecated and should be removed in the future.
+// Snapshot expiry is decided by the user when they share the snapshot.
+func DeleteExpiredSnapshots(cmd *models.DeleteExpiredSnapshotsCommand) error {
 	return inTransaction(func(sess *DBSession) error {
-		var expiredCount int64 = 0
-
-		if setting.SnapShotRemoveExpired {
-			deleteExpiredSql := "DELETE FROM dashboard_snapshot WHERE expires < ?"
-			expiredResponse, err := x.Exec(deleteExpiredSql, time.Now)
-			if err != nil {
-				return err
-			}
-			expiredCount, _ = expiredResponse.RowsAffected()
+		if !setting.SnapShotRemoveExpired {
+			sqlog.Warn("[Deprecated] The snapshot_remove_expired setting is outdated. Please remove from your config.")
+			return nil
 		}
 
-		sqlog.Debug("Deleted old/expired snaphots", "expired", expiredCount)
+		deleteExpiredSql := "DELETE FROM dashboard_snapshot WHERE expires < ?"
+		expiredResponse, err := sess.Exec(deleteExpiredSql, time.Now())
+		if err != nil {
+			return err
+		}
+		cmd.DeletedRows, _ = expiredResponse.RowsAffected()
+
 		return nil
 	})
 }
 
-func CreateDashboardSnapshot(cmd *m.CreateDashboardSnapshotCommand) error {
+func CreateDashboardSnapshot(cmd *models.CreateDashboardSnapshotCommand) error {
 	return inTransaction(func(sess *DBSession) error {
 
 		// never
@@ -43,17 +46,19 @@ func CreateDashboardSnapshot(cmd *m.CreateDashboardSnapshotCommand) error {
 			expires = time.Now().Add(time.Second * time.Duration(cmd.Expires))
 		}
 
-		snapshot := &m.DashboardSnapshot{
-			Name:      cmd.Name,
-			Key:       cmd.Key,
-			DeleteKey: cmd.DeleteKey,
-			OrgId:     cmd.OrgId,
-			UserId:    cmd.UserId,
-			External:  cmd.External,
-			Dashboard: cmd.Dashboard,
-			Expires:   expires,
-			Created:   time.Now(),
-			Updated:   time.Now(),
+		snapshot := &models.DashboardSnapshot{
+			Name:              cmd.Name,
+			Key:               cmd.Key,
+			DeleteKey:         cmd.DeleteKey,
+			OrgId:             cmd.OrgId,
+			UserId:            cmd.UserId,
+			External:          cmd.External,
+			ExternalUrl:       cmd.ExternalUrl,
+			ExternalDeleteUrl: cmd.ExternalDeleteUrl,
+			Dashboard:         cmd.Dashboard,
+			Expires:           expires,
+			Created:           time.Now(),
+			Updated:           time.Now(),
 		}
 
 		_, err := sess.Insert(snapshot)
@@ -63,7 +68,7 @@ func CreateDashboardSnapshot(cmd *m.CreateDashboardSnapshotCommand) error {
 	})
 }
 
-func DeleteDashboardSnapshot(cmd *m.DeleteDashboardSnapshotCommand) error {
+func DeleteDashboardSnapshot(cmd *models.DeleteDashboardSnapshotCommand) error {
 	return inTransaction(func(sess *DBSession) error {
 		var rawSql = "DELETE FROM dashboard_snapshot WHERE delete_key=?"
 		_, err := sess.Exec(rawSql, cmd.DeleteKey)
@@ -71,22 +76,24 @@ func DeleteDashboardSnapshot(cmd *m.DeleteDashboardSnapshotCommand) error {
 	})
 }
 
-func GetDashboardSnapshot(query *m.GetDashboardSnapshotQuery) error {
-	snapshot := m.DashboardSnapshot{Key: query.Key}
+func GetDashboardSnapshot(query *models.GetDashboardSnapshotQuery) error {
+	snapshot := models.DashboardSnapshot{Key: query.Key, DeleteKey: query.DeleteKey}
 	has, err := x.Get(&snapshot)
 
 	if err != nil {
 		return err
-	} else if has == false {
-		return m.ErrDashboardSnapshotNotFound
+	} else if !has {
+		return models.ErrDashboardSnapshotNotFound
 	}
 
 	query.Result = &snapshot
 	return nil
 }
 
-func SearchDashboardSnapshots(query *m.GetDashboardSnapshotsQuery) error {
-	var snapshots = make(m.DashboardSnapshotsList, 0)
+// SearchDashboardSnapshots returns a list of all snapshots for admins
+// for other roles, it returns snapshots created by the user
+func SearchDashboardSnapshots(query *models.GetDashboardSnapshotsQuery) error {
+	var snapshots = make(models.DashboardSnapshotsList, 0)
 
 	sess := x.Limit(query.Limit)
 	sess.Table("dashboard_snapshot")
@@ -95,7 +102,16 @@ func SearchDashboardSnapshots(query *m.GetDashboardSnapshotsQuery) error {
 		sess.Where("name LIKE ?", query.Name)
 	}
 
-	sess.Where("org_id = ?", query.OrgId)
+	// admins can see all snapshots, everyone else can only see their own snapshots
+	if query.SignedInUser.OrgRole == models.ROLE_ADMIN {
+		sess.Where("org_id = ?", query.OrgId)
+	} else if !query.SignedInUser.IsAnonymous {
+		sess.Where("org_id = ? AND user_id = ?", query.OrgId, query.SignedInUser.UserId)
+	} else {
+		query.Result = snapshots
+		return nil
+	}
+
 	err := sess.Find(&snapshots)
 	query.Result = snapshots
 	return err

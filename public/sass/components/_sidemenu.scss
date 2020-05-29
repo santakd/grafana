@@ -1,3 +1,5 @@
+$mobile-menu-breakpoint: md;
+
 .sidemenu {
   position: fixed;
   display: flex;
@@ -5,6 +7,7 @@
   flex-direction: column;
   width: $side-menu-width;
   z-index: $zindex-sidemenu;
+
   a:focus {
     text-decoration: none;
   }
@@ -16,6 +19,14 @@
   .sidemenu__close {
     display: none;
   }
+
+  @include media-breakpoint-up($mobile-menu-breakpoint) {
+    background: $side-menu-bg;
+    height: auto;
+    box-shadow: $side-menu-shadow;
+    position: relative;
+    z-index: $zindex-sidemenu;
+  }
 }
 
 // body class that hides sidemenu
@@ -25,45 +36,36 @@
   }
 }
 
-@include media-breakpoint-up(sm) {
-  .sidemenu-open {
-    .sidemenu {
-      background: $side-menu-bg;
-      position: initial;
-      height: auto;
-      box-shadow: $side-menu-shadow;
-      position: relative;
-      z-index: $zindex-sidemenu;
-    }
-    .sidemenu__top,
-    .sidemenu__bottom {
-      display: block;
-    }
-  }
-}
-
 .sidemenu__top {
-  padding-top: 3rem;
+  padding-top: 40px;
   flex-grow: 1;
-  display: none;
 }
 
 .sidemenu__bottom {
   padding-bottom: $spacer;
+}
+
+.sidemenu__top,
+.sidemenu__bottom {
   display: none;
+
+  @include media-breakpoint-up($mobile-menu-breakpoint) {
+    display: block;
+  }
 }
 
 .sidemenu-item {
   position: relative;
   @include left-brand-border();
 
-  @include media-breakpoint-up(sm) {
+  @include media-breakpoint-up($mobile-menu-breakpoint) {
     &.active,
     &:hover {
       background-color: $side-menu-item-hover-bg;
       @include left-brand-border-gradient();
 
       .dropdown-menu {
+        border: none;
         margin: 0;
         display: block;
         opacity: 0;
@@ -71,7 +73,7 @@
         // important to overlap it otherwise it can be hidden
         // again by the mouse getting outside the hover space
         left: $side-menu-width - 2px;
-        @include animation("dropdown-anim 150ms ease-in-out 100ms forwards");
+        @include animation('dropdown-anim 150ms ease-in-out 100ms forwards');
         z-index: $zindex-sidemenu;
       }
     }
@@ -83,7 +85,7 @@
 }
 
 .sidemenu-link {
-  color: $link-color;
+  color: $side-menu-icon-color !important;
   line-height: 42px;
   padding: 0px 10px 0px 10px;
   display: block;
@@ -115,24 +117,7 @@
   width: 35px;
   height: 35px;
   display: inline-block;
-
-  .fa,
-  .icon-gf,
-  .gicon {
-    color: $side-menu-link-color;
-    position: relative;
-    opacity: 0.7;
-    font-size: 130%;
-  }
-
-  .fa {
-    top: 2px;
-    position: relative;
-  }
-
-  .icon-gf {
-    top: 5px;
-  }
+  position: relative;
 
   img {
     position: relative;
@@ -144,7 +129,27 @@
   white-space: nowrap;
   background-color: $side-menu-item-hover-bg;
   font-size: 17px;
-  color: #ebedf2;
+  color: $side-menu-header-color;
+}
+
+.side-menu-header-link {
+  color: $side-menu-header-color !important;
+  border: none !important;
+  padding: 0 !important;
+}
+
+.dropdown-menu--sidemenu > li > .side-menu-header-link:hover {
+  color: #fff !important;
+  background-color: $side-menu-item-hover-bg !important;
+}
+
+.sidemenu-subtitle {
+  padding: $space-sm $space-md $space-sm;
+  font-size: $font-size-sm;
+  color: $text-color-weak;
+  border-bottom: 1px solid $dropdownDividerBottom;
+  margin-bottom: $space-xs;
+  white-space: nowrap;
 }
 
 li.sidemenu-org-switcher {
@@ -164,23 +169,24 @@ li.sidemenu-org-switcher {
 
 .sidemenu-org-switcher__switch {
   font-size: $font-size-sm;
-  padding-left: 1.5rem;
+  padding-left: $space-lg;
   display: flex;
   align-items: center;
   > i.fa.fa-random {
-    margin-right: 4px;
+    margin-right: $space-xs;
     top: 1px;
   }
 }
 
 .sidemenu__logo {
   display: block;
-  padding: 0.4rem 1rem 0.4rem 0.65rem;
+  padding: 6px 14px 6px 9px;
   min-height: $navbarHeight;
   position: relative;
+  height: $navbarHeight - 1px;
 
   &:hover {
-    background: $navbarButtonBackgroundHighlight;
+    background: lightOrDark($gray33, $gray25);
   }
 
   img {
@@ -191,12 +197,15 @@ li.sidemenu-org-switcher {
   }
 }
 
-@include media-breakpoint-down(xs) {
+@include media-breakpoint-down(sm) {
   .sidemenu-open--xs {
+    li {
+      font-size: $font-size-md;
+    }
+
     .sidemenu {
       width: 100%;
-      background: $side-menu-bg;
-      position: initial;
+      background: $side-menu-bg-mobile;
       height: auto;
       box-shadow: $side-menu-shadow;
       position: relative;
@@ -214,6 +223,9 @@ li.sidemenu-org-switcher {
     .sidemenu__bottom {
       display: block;
     }
+    .sidemenu-item {
+      border-right: 2px solid transparent;
+    }
   }
 
   .sidemenu {
@@ -222,7 +234,7 @@ li.sidemenu-org-switcher {
     }
 
     .sidemenu__logo_small_breakpoint {
-      padding: 16px 10px 26px;
+      padding: 14px 10px 26px 13px;
       display: flex;
       flex-direction: row;
       justify-content: space-between;
@@ -234,7 +246,7 @@ li.sidemenu-org-switcher {
     }
 
     .sidemenu__top {
-      padding-top: 0rem;
+      padding-top: 0;
     }
 
     .side-menu-header {
@@ -254,8 +266,7 @@ li.sidemenu-org-switcher {
       position: unset;
       width: 100%;
       float: none;
-      margin-top: 0.5rem;
-      margin-bottom: 0.5rem;
+      margin-bottom: $space-sm;
 
       > li > a {
         padding-left: 15px;

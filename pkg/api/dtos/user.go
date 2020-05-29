@@ -18,6 +18,7 @@ type AdminCreateUserForm struct {
 	Login    string `json:"login"`
 	Name     string `json:"name"`
 	Password string `json:"password" binding:"Required"`
+	OrgId    int64  `json:"orgId"`
 }
 
 type AdminUpdateUserForm struct {
@@ -49,4 +50,10 @@ type ResetUserPasswordForm struct {
 	Code            string `json:"code"`
 	NewPassword     string `json:"newPassword"`
 	ConfirmPassword string `json:"confirmPassword"`
+}
+
+type UserLookupDTO struct {
+	UserID    int64  `json:"userId"`
+	Login     string `json:"login"`
+	AvatarURL string `json:"avatarUrl"`
 }

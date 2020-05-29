@@ -2,30 +2,27 @@ package cloudwatch
 
 import (
 	"context"
-	"errors"
+	"fmt"
 	"regexp"
-	"sort"
-	"strconv"
-	"strings"
+	"sync"
 	"time"
 
-	"github.com/grafana/grafana/pkg/log"
-	"github.com/grafana/grafana/pkg/models"
-	"github.com/grafana/grafana/pkg/setting"
-	"github.com/grafana/grafana/pkg/tsdb"
-
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/request"
-	"github.com/aws/aws-sdk-go/service/cloudwatch"
+	"github.com/aws/aws-sdk-go/service/cloudwatchlogs"
 	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
-	"github.com/grafana/grafana/pkg/components/null"
+	"github.com/aws/aws-sdk-go/service/resourcegroupstaggingapi/resourcegroupstaggingapiiface"
 	"github.com/grafana/grafana/pkg/components/simplejson"
-	"github.com/grafana/grafana/pkg/metrics"
+	"github.com/grafana/grafana/pkg/infra/log"
+	"github.com/grafana/grafana/pkg/models"
+	"github.com/grafana/grafana/pkg/tsdb"
 )
 
 type CloudWatchExecutor struct {
 	*models.DataSource
-	ec2Svc ec2iface.EC2API
+	ec2Svc  ec2iface.EC2API
+	rgtaSvc resourcegroupstaggingapiiface.ResourceGroupsTaggingAPIAPI
+
+	logsClientsByRegion map[string](*cloudwatchlogs.CloudWatchLogs)
+	mux                 sync.Mutex
 }
 
 type DatasourceInfo struct {
@@ -39,330 +36,209 @@ type DatasourceInfo struct {
 	SecretKey string
 }
 
-func NewCloudWatchExecutor(dsInfo *models.DataSource) (tsdb.TsdbQueryEndpoint, error) {
-	return &CloudWatchExecutor{}, nil
+const cloudWatchTSFormat = "2006-01-02 15:04:05.000"
+
+// Constants also defined in datasource/cloudwatch/datasource.ts
+const logIdentifierInternal = "__log__grafana_internal__"
+const logStreamIdentifierInternal = "__logstream__grafana_internal__"
+
+func (e *CloudWatchExecutor) getLogsClient(region string) (*cloudwatchlogs.CloudWatchLogs, error) {
+	e.mux.Lock()
+	defer e.mux.Unlock()
+
+	if logsClient, ok := e.logsClientsByRegion[region]; ok {
+		return logsClient, nil
+	}
+
+	dsInfo := retrieveDsInfo(e.DataSource, region)
+	newLogsClient, err := retrieveLogsClient(dsInfo)
+
+	if err != nil {
+		return nil, err
+	}
+
+	e.logsClientsByRegion[region] = newLogsClient
+
+	return newLogsClient, nil
+}
+
+func NewCloudWatchExecutor(datasource *models.DataSource) (tsdb.TsdbQueryEndpoint, error) {
+	dsInfo := retrieveDsInfo(datasource, "default")
+	defaultLogsClient, err := retrieveLogsClient(dsInfo)
+
+	if err != nil {
+		return nil, err
+	}
+
+	logsClientsByRegion := make(map[string](*cloudwatchlogs.CloudWatchLogs))
+	logsClientsByRegion[dsInfo.Region] = defaultLogsClient
+	logsClientsByRegion["default"] = defaultLogsClient
+
+	return &CloudWatchExecutor{
+		logsClientsByRegion: logsClientsByRegion,
+	}, nil
 }
 
 var (
-	plog               log.Logger
-	standardStatistics map[string]bool
-	aliasFormat        *regexp.Regexp
+	plog        log.Logger
+	aliasFormat *regexp.Regexp
 )
 
 func init() {
 	plog = log.New("tsdb.cloudwatch")
 	tsdb.RegisterTsdbQueryEndpoint("cloudwatch", NewCloudWatchExecutor)
-	standardStatistics = map[string]bool{
-		"Average":     true,
-		"Maximum":     true,
-		"Minimum":     true,
-		"Sum":         true,
-		"SampleCount": true,
-	}
 	aliasFormat = regexp.MustCompile(`\{\{\s*(.+?)\s*\}\}`)
 }
 
-func (e *CloudWatchExecutor) Query(ctx context.Context, dsInfo *models.DataSource, queryContext *tsdb.TsdbQuery) (*tsdb.Response, error) {
-	var result *tsdb.Response
-	e.DataSource = dsInfo
-	queryType := queryContext.Queries[0].Model.Get("type").MustString("")
-	var err error
+func (e *CloudWatchExecutor) alertQuery(ctx context.Context, logsClient *cloudwatchlogs.CloudWatchLogs, queryContext *tsdb.TsdbQuery) (*cloudwatchlogs.GetQueryResultsOutput, error) {
+	const maxAttempts = 8
+	const pollPeriod = 1000 * time.Millisecond
 
+	queryParams := queryContext.Queries[0].Model
+	startQueryOutput, err := e.executeStartQuery(ctx, logsClient, queryParams, queryContext.TimeRange)
+	if err != nil {
+		return nil, err
+	}
+
+	requestParams := simplejson.NewFromAny(map[string]interface{}{
+		"region":  queryParams.Get("region").MustString(""),
+		"queryId": *startQueryOutput.QueryId,
+	})
+
+	ticker := time.NewTicker(pollPeriod)
+	defer ticker.Stop()
+
+	attemptCount := 1
+	for range ticker.C {
+		if res, err := e.executeGetQueryResults(ctx, logsClient, requestParams); err != nil {
+			return nil, err
+		} else if isTerminated(*res.Status) {
+			return res, err
+		} else if attemptCount >= maxAttempts {
+			return res, fmt.Errorf("fetching of query results exceeded max number of attempts")
+		}
+
+		attemptCount++
+	}
+
+	return nil, nil
+}
+
+func (e *CloudWatchExecutor) Query(ctx context.Context, dsInfo *models.DataSource, queryContext *tsdb.TsdbQuery) (*tsdb.Response, error) {
+	e.DataSource = dsInfo
+
+	/*
+		Unlike many other data sources,	with Cloudwatch Logs query requests don't receive the results as the response to the query, but rather
+		an ID is first returned. Following this, a client is expected to send requests along with the ID until the status of the query is complete,
+		receiving (possibly partial) results each time. For queries made via dashboards and Explore, the logic of making these repeated queries is handled on
+		the frontend, but because alerts are executed on the backend the logic needs to be reimplemented here.
+	*/
+	queryParams := queryContext.Queries[0].Model
+	_, fromAlert := queryContext.Headers["FromAlert"]
+	isLogAlertQuery := fromAlert && queryParams.Get("queryMode").MustString("") == "Logs"
+
+	if isLogAlertQuery {
+		return e.executeLogAlertQuery(ctx, queryContext)
+	}
+
+	queryType := queryParams.Get("type").MustString("")
+
+	var err error
+	var result *tsdb.Response
 	switch queryType {
 	case "metricFindQuery":
 		result, err = e.executeMetricFindQuery(ctx, queryContext)
-		break
 	case "annotationQuery":
 		result, err = e.executeAnnotationQuery(ctx, queryContext)
-		break
+	case "logAction":
+		result, err = e.executeLogActions(ctx, queryContext)
 	case "timeSeriesQuery":
 		fallthrough
 	default:
 		result, err = e.executeTimeSeriesQuery(ctx, queryContext)
-		break
 	}
 
 	return result, err
 }
 
-func (e *CloudWatchExecutor) executeTimeSeriesQuery(ctx context.Context, queryContext *tsdb.TsdbQuery) (*tsdb.Response, error) {
-	result := &tsdb.Response{
-		Results: make(map[string]*tsdb.QueryResult),
+func (e *CloudWatchExecutor) executeLogAlertQuery(ctx context.Context, queryContext *tsdb.TsdbQuery) (*tsdb.Response, error) {
+	queryParams := queryContext.Queries[0].Model
+	queryParams.Set("subtype", "StartQuery")
+	queryParams.Set("queryString", queryParams.Get("expression").MustString(""))
+
+	region := queryParams.Get("region").MustString("default")
+	if region == "default" {
+		region = e.DataSource.JsonData.Get("defaultRegion").MustString()
+		queryParams.Set("region", region)
 	}
 
-	errCh := make(chan error, 1)
-	resCh := make(chan *tsdb.QueryResult, 1)
+	logsClient, err := e.getLogsClient(region)
+	if err != nil {
+		return nil, err
+	}
 
-	currentlyExecuting := 0
-	for i, model := range queryContext.Queries {
-		queryType := model.Model.Get("type").MustString()
-		if queryType != "timeSeriesQuery" && queryType != "" {
-			continue
+	result, err := e.executeStartQuery(ctx, logsClient, queryParams, queryContext.TimeRange)
+	if err != nil {
+		return nil, err
+	}
+
+	queryParams.Set("queryId", *result.QueryId)
+
+	// Get query results
+	getQueryResultsOutput, err := e.alertQuery(ctx, logsClient, queryContext)
+	if err != nil {
+		return nil, err
+	}
+
+	dataframe, err := logsResultsToDataframes(getQueryResultsOutput)
+	if err != nil {
+		return nil, err
+	}
+
+	statsGroups := queryParams.Get("statsGroups").MustStringArray()
+	if len(statsGroups) > 0 && len(dataframe.Fields) > 0 {
+		groupedFrames, err := groupResults(dataframe, statsGroups)
+		if err != nil {
+			return nil, err
 		}
-		currentlyExecuting++
-		go func(refId string, index int) {
-			queryRes, err := e.executeQuery(ctx, queryContext.Queries[index].Model, queryContext)
-			currentlyExecuting--
+
+		encodedFrames := make([][]byte, 0)
+		for _, frame := range groupedFrames {
+			dataframeEnc, err := frame.MarshalArrow()
 			if err != nil {
-				errCh <- err
-			} else {
-				queryRes.RefId = refId
-				resCh <- queryRes
+				return nil, err
 			}
-		}(model.RefId, i)
-	}
-
-	for currentlyExecuting != 0 {
-		select {
-		case res := <-resCh:
-			result.Results[res.RefId] = res
-		case err := <-errCh:
-			return result, err
-		case <-ctx.Done():
-			return result, ctx.Err()
+			encodedFrames = append(encodedFrames, dataframeEnc)
 		}
+
+		response := &tsdb.Response{
+			Results: make(map[string]*tsdb.QueryResult),
+		}
+
+		response.Results["A"] = &tsdb.QueryResult{
+			RefId:      "A",
+			Dataframes: encodedFrames,
+		}
+
+		return response, nil
 	}
 
-	return result, nil
+	dataframeEnc, err := dataframe.MarshalArrow()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &tsdb.Response{
+		Results: map[string]*tsdb.QueryResult{
+			"A": {
+				RefId:      "A",
+				Dataframes: [][]byte{dataframeEnc},
+			},
+		},
+	}
+	return response, nil
 }
 
-func (e *CloudWatchExecutor) executeQuery(ctx context.Context, parameters *simplejson.Json, queryContext *tsdb.TsdbQuery) (*tsdb.QueryResult, error) {
-	query, err := parseQuery(parameters)
-	if err != nil {
-		return nil, err
-	}
-
-	client, err := e.getClient(query.Region)
-	if err != nil {
-		return nil, err
-	}
-
-	startTime, err := queryContext.TimeRange.ParseFrom()
-	if err != nil {
-		return nil, err
-	}
-
-	endTime, err := queryContext.TimeRange.ParseTo()
-	if err != nil {
-		return nil, err
-	}
-
-	params := &cloudwatch.GetMetricStatisticsInput{
-		Namespace:  aws.String(query.Namespace),
-		MetricName: aws.String(query.MetricName),
-		Dimensions: query.Dimensions,
-		Period:     aws.Int64(int64(query.Period)),
-		StartTime:  aws.Time(startTime),
-		EndTime:    aws.Time(endTime),
-	}
-	if len(query.Statistics) > 0 {
-		params.Statistics = query.Statistics
-	}
-	if len(query.ExtendedStatistics) > 0 {
-		params.ExtendedStatistics = query.ExtendedStatistics
-	}
-
-	if setting.Env == setting.DEV {
-		plog.Debug("CloudWatch query", "raw query", params)
-	}
-
-	resp, err := client.GetMetricStatisticsWithContext(ctx, params, request.WithResponseReadTimeout(10*time.Second))
-	if err != nil {
-		return nil, err
-	}
-	metrics.M_Aws_CloudWatch_GetMetricStatistics.Inc()
-
-	queryRes, err := parseResponse(resp, query)
-	if err != nil {
-		return nil, err
-	}
-
-	return queryRes, nil
-}
-
-func parseDimensions(model *simplejson.Json) ([]*cloudwatch.Dimension, error) {
-	var result []*cloudwatch.Dimension
-
-	for k, v := range model.Get("dimensions").MustMap() {
-		kk := k
-		if vv, ok := v.(string); ok {
-			result = append(result, &cloudwatch.Dimension{
-				Name:  &kk,
-				Value: &vv,
-			})
-		} else {
-			return nil, errors.New("failed to parse")
-		}
-	}
-
-	sort.Slice(result, func(i, j int) bool {
-		return *result[i].Name < *result[j].Name
-	})
-	return result, nil
-}
-
-func parseStatistics(model *simplejson.Json) ([]string, []string, error) {
-	var statistics []string
-	var extendedStatistics []string
-
-	for _, s := range model.Get("statistics").MustArray() {
-		if ss, ok := s.(string); ok {
-			if _, isStandard := standardStatistics[ss]; isStandard {
-				statistics = append(statistics, ss)
-			} else {
-				extendedStatistics = append(extendedStatistics, ss)
-			}
-		} else {
-			return nil, nil, errors.New("failed to parse")
-		}
-	}
-
-	return statistics, extendedStatistics, nil
-}
-
-func parseQuery(model *simplejson.Json) (*CloudWatchQuery, error) {
-	region, err := model.Get("region").String()
-	if err != nil {
-		return nil, err
-	}
-
-	namespace, err := model.Get("namespace").String()
-	if err != nil {
-		return nil, err
-	}
-
-	metricName, err := model.Get("metricName").String()
-	if err != nil {
-		return nil, err
-	}
-
-	dimensions, err := parseDimensions(model)
-	if err != nil {
-		return nil, err
-	}
-
-	statistics, extendedStatistics, err := parseStatistics(model)
-	if err != nil {
-		return nil, err
-	}
-
-	p := model.Get("period").MustString("")
-	if p == "" {
-		if namespace == "AWS/EC2" {
-			p = "300"
-		} else {
-			p = "60"
-		}
-	}
-
-	period := 300
-	if regexp.MustCompile(`^\d+$`).Match([]byte(p)) {
-		period, err = strconv.Atoi(p)
-		if err != nil {
-			return nil, err
-		}
-	} else {
-		d, err := time.ParseDuration(p)
-		if err != nil {
-			return nil, err
-		}
-		period = int(d.Seconds())
-	}
-
-	alias := model.Get("alias").MustString()
-	if alias == "" {
-		alias = "{{metric}}_{{stat}}"
-	}
-
-	return &CloudWatchQuery{
-		Region:             region,
-		Namespace:          namespace,
-		MetricName:         metricName,
-		Dimensions:         dimensions,
-		Statistics:         aws.StringSlice(statistics),
-		ExtendedStatistics: aws.StringSlice(extendedStatistics),
-		Period:             period,
-		Alias:              alias,
-	}, nil
-}
-
-func formatAlias(query *CloudWatchQuery, stat string, dimensions map[string]string) string {
-	data := map[string]string{}
-	data["region"] = query.Region
-	data["namespace"] = query.Namespace
-	data["metric"] = query.MetricName
-	data["stat"] = stat
-	data["period"] = strconv.Itoa(query.Period)
-	for k, v := range dimensions {
-		data[k] = v
-	}
-
-	result := aliasFormat.ReplaceAllFunc([]byte(query.Alias), func(in []byte) []byte {
-		labelName := strings.Replace(string(in), "{{", "", 1)
-		labelName = strings.Replace(labelName, "}}", "", 1)
-		labelName = strings.TrimSpace(labelName)
-		if val, exists := data[labelName]; exists {
-			return []byte(val)
-		}
-
-		return in
-	})
-
-	return string(result)
-}
-
-func parseResponse(resp *cloudwatch.GetMetricStatisticsOutput, query *CloudWatchQuery) (*tsdb.QueryResult, error) {
-	queryRes := tsdb.NewQueryResult()
-
-	var value float64
-	for _, s := range append(query.Statistics, query.ExtendedStatistics...) {
-		series := tsdb.TimeSeries{
-			Tags:   map[string]string{},
-			Points: make([]tsdb.TimePoint, 0),
-		}
-		for _, d := range query.Dimensions {
-			series.Tags[*d.Name] = *d.Value
-		}
-		series.Name = formatAlias(query, *s, series.Tags)
-
-		lastTimestamp := make(map[string]time.Time)
-		sort.Slice(resp.Datapoints, func(i, j int) bool {
-			return (*resp.Datapoints[i].Timestamp).Before(*resp.Datapoints[j].Timestamp)
-		})
-		for _, v := range resp.Datapoints {
-			switch *s {
-			case "Average":
-				value = *v.Average
-			case "Maximum":
-				value = *v.Maximum
-			case "Minimum":
-				value = *v.Minimum
-			case "Sum":
-				value = *v.Sum
-			case "SampleCount":
-				value = *v.SampleCount
-			default:
-				if strings.Index(*s, "p") == 0 && v.ExtendedStatistics[*s] != nil {
-					value = *v.ExtendedStatistics[*s]
-				}
-			}
-
-			// terminate gap of data points
-			timestamp := *v.Timestamp
-			if _, ok := lastTimestamp[*s]; ok {
-				nextTimestampFromLast := lastTimestamp[*s].Add(time.Duration(query.Period) * time.Second)
-				for timestamp.After(nextTimestampFromLast) {
-					series.Points = append(series.Points, tsdb.NewTimePoint(null.FloatFromPtr(nil), float64(nextTimestampFromLast.Unix()*1000)))
-					nextTimestampFromLast = nextTimestampFromLast.Add(time.Duration(query.Period) * time.Second)
-				}
-			}
-			lastTimestamp[*s] = timestamp
-
-			series.Points = append(series.Points, tsdb.NewTimePoint(null.FloatFrom(value), float64(timestamp.Unix()*1000)))
-		}
-
-		queryRes.Series = append(queryRes.Series, &series)
-	}
-
-	return queryRes, nil
+func isTerminated(queryStatus string) bool {
+	return queryStatus == "Complete" || queryStatus == "Cancelled" || queryStatus == "Failed" || queryStatus == "Timeout"
 }

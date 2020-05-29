@@ -3,190 +3,213 @@ package sqlstore
 import (
 	"testing"
 
-	"github.com/go-xorm/xorm"
-
-	. "github.com/smartystreets/goconvey/convey"
-
-	m "github.com/grafana/grafana/pkg/models"
-	"github.com/grafana/grafana/pkg/services/sqlstore/sqlutil"
+	"github.com/grafana/grafana/pkg/models"
+	"github.com/stretchr/testify/require"
 )
 
-func InitTestDB(t *testing.T) *xorm.Engine {
-	x, err := xorm.NewEngine(sqlutil.TestDB_Sqlite3.DriverName, sqlutil.TestDB_Sqlite3.ConnStr)
-	//x, err := xorm.NewEngine(sqlutil.TestDB_Mysql.DriverName, sqlutil.TestDB_Mysql.ConnStr)
-	//x, err := xorm.NewEngine(sqlutil.TestDB_Postgres.DriverName, sqlutil.TestDB_Postgres.ConnStr)
-
-	// x.ShowSQL()
-
-	if err != nil {
-		t.Fatalf("Failed to init in memory sqllite3 db %v", err)
-	}
-
-	sqlutil.CleanDB(x)
-
-	if err := SetEngine(x); err != nil {
-		t.Fatal(err)
-	}
-
-	return x
-}
-
-type Test struct {
-	Id   int64
-	Name string
-}
-
 func TestDataAccess(t *testing.T) {
-	Convey("Testing DB", t, func() {
-		InitTestDB(t)
-		Convey("Can add datasource", func() {
-			err := AddDataSource(&m.AddDataSourceCommand{
+	defaultAddDatasourceCommand := models.AddDataSourceCommand{
+		OrgId:  10,
+		Name:   "nisse",
+		Type:   models.DS_GRAPHITE,
+		Access: models.DS_ACCESS_DIRECT,
+		Url:    "http://test",
+	}
+
+	defaultUpdateDatasourceCommand := models.UpdateDataSourceCommand{
+		OrgId:  10,
+		Name:   "nisse_updated",
+		Type:   models.DS_GRAPHITE,
+		Access: models.DS_ACCESS_DIRECT,
+		Url:    "http://test",
+	}
+
+	initDatasource := func() *models.DataSource {
+		cmd := defaultAddDatasourceCommand
+		err := AddDataSource(&cmd)
+		require.NoError(t, err)
+
+		query := models.GetDataSourcesQuery{OrgId: 10}
+		err = GetDataSources(&query)
+		require.NoError(t, err)
+		require.Equal(t, 1, len(query.Result))
+
+		return query.Result[0]
+	}
+
+	t.Run("AddDataSource", func(t *testing.T) {
+		t.Run("Can add datasource", func(t *testing.T) {
+			InitTestDB(t)
+
+			err := AddDataSource(&models.AddDataSourceCommand{
 				OrgId:    10,
 				Name:     "laban",
-				Type:     m.DS_INFLUXDB,
-				Access:   m.DS_ACCESS_DIRECT,
+				Type:     models.DS_GRAPHITE,
+				Access:   models.DS_ACCESS_DIRECT,
 				Url:      "http://test",
 				Database: "site",
 				ReadOnly: true,
 			})
+			require.NoError(t, err)
 
-			So(err, ShouldBeNil)
-
-			query := m.GetDataSourcesQuery{OrgId: 10}
+			query := models.GetDataSourcesQuery{OrgId: 10}
 			err = GetDataSources(&query)
-			So(err, ShouldBeNil)
+			require.NoError(t, err)
 
-			So(len(query.Result), ShouldEqual, 1)
-
+			require.Equal(t, 1, len(query.Result))
 			ds := query.Result[0]
 
-			So(ds.OrgId, ShouldEqual, 10)
-			So(ds.Database, ShouldEqual, "site")
-			So(ds.ReadOnly, ShouldBeTrue)
+			require.EqualValues(t, 10, ds.OrgId)
+			require.Equal(t, "site", ds.Database)
+			require.True(t, ds.ReadOnly)
 		})
 
-		Convey("Given a datasource", func() {
-			err := AddDataSource(&m.AddDataSourceCommand{
+		t.Run("generates uid if not specified", func(t *testing.T) {
+			InitTestDB(t)
+			ds := initDatasource()
+			require.NotEmpty(t, ds.Uid)
+		})
+
+		t.Run("fails to insert ds with same uid", func(t *testing.T) {
+			InitTestDB(t)
+			cmd1 := defaultAddDatasourceCommand
+			cmd2 := defaultAddDatasourceCommand
+			cmd1.Uid = "test"
+			cmd2.Uid = "test"
+			err := AddDataSource(&cmd1)
+			require.NoError(t, err)
+			err = AddDataSource(&cmd2)
+			require.Error(t, err)
+			require.IsType(t, models.ErrDataSourceUidExists, err)
+		})
+	})
+
+	t.Run("UpdateDataSource", func(t *testing.T) {
+		t.Run("updates datasource with version", func(t *testing.T) {
+			InitTestDB(t)
+			ds := initDatasource()
+			cmd := defaultUpdateDatasourceCommand
+			cmd.Id = ds.Id
+			cmd.Version = ds.Version
+			err := UpdateDataSource(&cmd)
+			require.NoError(t, err)
+		})
+
+		t.Run("does not overwrite Uid if not specified", func(t *testing.T) {
+			InitTestDB(t)
+			ds := initDatasource()
+			require.NotEmpty(t, ds.Uid)
+
+			cmd := defaultUpdateDatasourceCommand
+			cmd.Id = ds.Id
+			err := UpdateDataSource(&cmd)
+			require.NoError(t, err)
+
+			query := models.GetDataSourceByIdQuery{Id: ds.Id}
+			err = GetDataSourceById(&query)
+			require.NoError(t, err)
+			require.Equal(t, ds.Uid, query.Result.Uid)
+		})
+
+		t.Run("prevents update if version changed", func(t *testing.T) {
+			InitTestDB(t)
+			ds := initDatasource()
+
+			cmd := models.UpdateDataSourceCommand{
+				Id:      ds.Id,
+				OrgId:   10,
+				Name:    "nisse",
+				Type:    models.DS_GRAPHITE,
+				Access:  models.DS_ACCESS_PROXY,
+				Url:     "http://test",
+				Version: ds.Version,
+			}
+			// Make a copy as UpdateDataSource modifies it
+			cmd2 := cmd
+
+			err := UpdateDataSource(&cmd)
+			require.NoError(t, err)
+
+			err = UpdateDataSource(&cmd2)
+			require.Error(t, err)
+		})
+
+		t.Run("updates ds without version specified", func(t *testing.T) {
+			InitTestDB(t)
+			ds := initDatasource()
+
+			cmd := &models.UpdateDataSourceCommand{
+				Id:     ds.Id,
 				OrgId:  10,
 				Name:   "nisse",
-				Type:   m.DS_GRAPHITE,
-				Access: m.DS_ACCESS_DIRECT,
+				Type:   models.DS_GRAPHITE,
+				Access: models.DS_ACCESS_PROXY,
 				Url:    "http://test",
-			})
-			So(err, ShouldBeNil)
+			}
 
-			query := m.GetDataSourcesQuery{OrgId: 10}
-			err = GetDataSources(&query)
-			So(err, ShouldBeNil)
-
-			ds := query.Result[0]
-
-			Convey(" updated ", func() {
-				cmd := &m.UpdateDataSourceCommand{
-					Id:      ds.Id,
-					OrgId:   10,
-					Name:    "nisse",
-					Type:    m.DS_GRAPHITE,
-					Access:  m.DS_ACCESS_PROXY,
-					Url:     "http://test",
-					Version: ds.Version,
-				}
-
-				Convey("with same version as source", func() {
-					err := UpdateDataSource(cmd)
-					So(err, ShouldBeNil)
-				})
-
-				Convey("when someone else updated between read and update", func() {
-					query := m.GetDataSourcesQuery{OrgId: 10}
-					err = GetDataSources(&query)
-					So(err, ShouldBeNil)
-
-					ds := query.Result[0]
-					intendedUpdate := &m.UpdateDataSourceCommand{
-						Id:      ds.Id,
-						OrgId:   10,
-						Name:    "nisse",
-						Type:    m.DS_GRAPHITE,
-						Access:  m.DS_ACCESS_PROXY,
-						Url:     "http://test",
-						Version: ds.Version,
-					}
-
-					updateFromOtherUser := &m.UpdateDataSourceCommand{
-						Id:      ds.Id,
-						OrgId:   10,
-						Name:    "nisse",
-						Type:    m.DS_GRAPHITE,
-						Access:  m.DS_ACCESS_PROXY,
-						Url:     "http://test",
-						Version: ds.Version,
-					}
-
-					err := UpdateDataSource(updateFromOtherUser)
-					So(err, ShouldBeNil)
-
-					err = UpdateDataSource(intendedUpdate)
-					So(err, ShouldNotBeNil)
-				})
-
-				Convey("updating datasource without version", func() {
-					cmd := &m.UpdateDataSourceCommand{
-						Id:     ds.Id,
-						OrgId:  10,
-						Name:   "nisse",
-						Type:   m.DS_GRAPHITE,
-						Access: m.DS_ACCESS_PROXY,
-						Url:    "http://test",
-					}
-
-					Convey("should not raise errors", func() {
-						err := UpdateDataSource(cmd)
-						So(err, ShouldBeNil)
-					})
-				})
-
-				Convey("updating datasource without higher version", func() {
-					cmd := &m.UpdateDataSourceCommand{
-						Id:      ds.Id,
-						OrgId:   10,
-						Name:    "nisse",
-						Type:    m.DS_GRAPHITE,
-						Access:  m.DS_ACCESS_PROXY,
-						Url:     "http://test",
-						Version: 90000,
-					}
-
-					Convey("should not raise errors", func() {
-						err := UpdateDataSource(cmd)
-						So(err, ShouldBeNil)
-					})
-				})
-			})
-
-			Convey("Can delete datasource by id", func() {
-				err := DeleteDataSourceById(&m.DeleteDataSourceByIdCommand{Id: ds.Id, OrgId: ds.OrgId})
-				So(err, ShouldBeNil)
-
-				GetDataSources(&query)
-				So(len(query.Result), ShouldEqual, 0)
-			})
-
-			Convey("Can delete datasource by name", func() {
-				err := DeleteDataSourceByName(&m.DeleteDataSourceByNameCommand{Name: ds.Name, OrgId: ds.OrgId})
-				So(err, ShouldBeNil)
-
-				GetDataSources(&query)
-				So(len(query.Result), ShouldEqual, 0)
-			})
-
-			Convey("Can not delete datasource with wrong orgId", func() {
-				err := DeleteDataSourceById(&m.DeleteDataSourceByIdCommand{Id: ds.Id, OrgId: 123123})
-				So(err, ShouldBeNil)
-
-				GetDataSources(&query)
-				So(len(query.Result), ShouldEqual, 1)
-			})
+			err := UpdateDataSource(cmd)
+			require.NoError(t, err)
 		})
+
+		t.Run("updates ds without higher version", func(t *testing.T) {
+			InitTestDB(t)
+			ds := initDatasource()
+
+			cmd := &models.UpdateDataSourceCommand{
+				Id:      ds.Id,
+				OrgId:   10,
+				Name:    "nisse",
+				Type:    models.DS_GRAPHITE,
+				Access:  models.DS_ACCESS_PROXY,
+				Url:     "http://test",
+				Version: 90000,
+			}
+
+			err := UpdateDataSource(cmd)
+			require.NoError(t, err)
+		})
+	})
+
+	t.Run("DeleteDataSourceById", func(t *testing.T) {
+		t.Run("can delete datasource", func(t *testing.T) {
+			InitTestDB(t)
+			ds := initDatasource()
+
+			err := DeleteDataSourceById(&models.DeleteDataSourceByIdCommand{Id: ds.Id, OrgId: ds.OrgId})
+			require.NoError(t, err)
+
+			query := models.GetDataSourcesQuery{OrgId: 10}
+			err = GetDataSources(&query)
+			require.NoError(t, err)
+
+			require.Equal(t, 0, len(query.Result))
+		})
+
+		t.Run("Can not delete datasource with wrong orgId", func(t *testing.T) {
+			InitTestDB(t)
+			ds := initDatasource()
+
+			err := DeleteDataSourceById(&models.DeleteDataSourceByIdCommand{Id: ds.Id, OrgId: 123123})
+			require.NoError(t, err)
+			query := models.GetDataSourcesQuery{OrgId: 10}
+			err = GetDataSources(&query)
+			require.NoError(t, err)
+
+			require.Equal(t, 1, len(query.Result))
+		})
+	})
+
+	t.Run("DeleteDataSourceByName", func(t *testing.T) {
+		InitTestDB(t)
+		ds := initDatasource()
+		query := models.GetDataSourcesQuery{OrgId: 10}
+
+		err := DeleteDataSourceByName(&models.DeleteDataSourceByNameCommand{Name: ds.Name, OrgId: ds.OrgId})
+		require.NoError(t, err)
+
+		err = GetDataSources(&query)
+		require.NoError(t, err)
+
+		require.Equal(t, 0, len(query.Result))
 	})
 }

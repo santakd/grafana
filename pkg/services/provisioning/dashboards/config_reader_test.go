@@ -1,62 +1,102 @@
 package dashboards
 
 import (
+	"os"
 	"testing"
 
-	. "github.com/smartystreets/goconvey/convey"
+	"github.com/stretchr/testify/require"
+
+	"github.com/grafana/grafana/pkg/infra/log"
 )
 
 var (
-	simpleDashboardConfig string = "./test-configs/dashboards-from-disk"
-	brokenConfigs         string = "./test-configs/broken-configs"
+	simpleDashboardConfig = "./testdata/test-configs/dashboards-from-disk"
+	oldVersion            = "./testdata/test-configs/version-0"
+	brokenConfigs         = "./testdata/test-configs/broken-configs"
+	appliedDefaults       = "./testdata/test-configs/applied-defaults"
 )
 
 func TestDashboardsAsConfig(t *testing.T) {
-	Convey("Dashboards as configuration", t, func() {
+	t.Run("Dashboards as configuration", func(t *testing.T) {
 
-		Convey("Can read config file", func() {
+		logger := log.New("test-logger")
 
-			cfgProvifer := configReader{path: simpleDashboardConfig}
-			cfg, err := cfgProvifer.readConfig()
-			if err != nil {
-				t.Fatalf("readConfig return an error %v", err)
-			}
+		t.Run("default values should be applied", func(t *testing.T) {
+			cfgProvider := configReader{path: appliedDefaults, log: logger}
+			cfg, err := cfgProvider.readConfig()
+			require.NoError(t, err)
 
-			So(len(cfg), ShouldEqual, 2)
-
-			ds := cfg[0]
-
-			So(ds.Name, ShouldEqual, "general dashboards")
-			So(ds.Type, ShouldEqual, "file")
-			So(ds.OrgId, ShouldEqual, 2)
-			So(ds.Folder, ShouldEqual, "developers")
-			So(ds.Editable, ShouldBeTrue)
-
-			So(len(ds.Options), ShouldEqual, 1)
-			So(ds.Options["folder"], ShouldEqual, "/var/lib/grafana/dashboards")
-
-			ds2 := cfg[1]
-
-			So(ds2.Name, ShouldEqual, "default")
-			So(ds2.Type, ShouldEqual, "file")
-			So(ds2.OrgId, ShouldEqual, 1)
-			So(ds2.Folder, ShouldEqual, "")
-			So(ds2.Editable, ShouldBeFalse)
-
-			So(len(ds2.Options), ShouldEqual, 1)
-			So(ds2.Options["folder"], ShouldEqual, "/var/lib/grafana/dashboards")
+			require.Equal(t, "file", cfg[0].Type)
+			require.Equal(t, int64(1), cfg[0].OrgID)
+			require.Equal(t, int64(10), cfg[0].UpdateIntervalSeconds)
 		})
 
-		Convey("Should skip broken config files", func() {
+		t.Run("Can read config file version 1 format", func(t *testing.T) {
+			_ = os.Setenv("TEST_VAR", "general")
+			cfgProvider := configReader{path: simpleDashboardConfig, log: logger}
+			cfg, err := cfgProvider.readConfig()
+			_ = os.Unsetenv("TEST_VAR")
+			require.NoError(t, err)
 
-			cfgProvifer := configReader{path: brokenConfigs}
-			cfg, err := cfgProvifer.readConfig()
+			validateDashboardAsConfig(t, cfg)
+		})
+
+		t.Run("Can read config file in version 0 format", func(t *testing.T) {
+			cfgProvider := configReader{path: oldVersion, log: logger}
+			cfg, err := cfgProvider.readConfig()
+			require.NoError(t, err)
+
+			validateDashboardAsConfig(t, cfg)
+		})
+
+		t.Run("Should skip invalid path", func(t *testing.T) {
+			cfgProvider := configReader{path: "/invalid-directory", log: logger}
+			cfg, err := cfgProvider.readConfig()
 			if err != nil {
 				t.Fatalf("readConfig return an error %v", err)
 			}
 
-			So(len(cfg), ShouldEqual, 0)
+			require.Equal(t, 0, len(cfg))
+		})
 
+		t.Run("Should skip broken config files", func(t *testing.T) {
+			cfgProvider := configReader{path: brokenConfigs, log: logger}
+			cfg, err := cfgProvider.readConfig()
+			if err != nil {
+				t.Fatalf("readConfig return an error %v", err)
+			}
+
+			require.Equal(t, 0, len(cfg))
 		})
 	})
+}
+
+func validateDashboardAsConfig(t *testing.T, cfg []*config) {
+	t.Helper()
+
+	require.Equal(t, 2, len(cfg))
+
+	ds := cfg[0]
+	require.Equal(t, ds.Name, "general dashboards")
+	require.Equal(t, ds.Type, "file")
+	require.Equal(t, ds.OrgID, int64(2))
+	require.Equal(t, ds.Folder, "developers")
+	require.Equal(t, ds.FolderUID, "xyz")
+	require.True(t, ds.Editable)
+	require.Equal(t, len(ds.Options), 1)
+	require.Equal(t, ds.Options["path"], "/var/lib/grafana/dashboards")
+	require.True(t, ds.DisableDeletion)
+	require.Equal(t, ds.UpdateIntervalSeconds, int64(15))
+
+	ds2 := cfg[1]
+	require.Equal(t, ds2.Name, "default")
+	require.Equal(t, ds2.Type, "file")
+	require.Equal(t, ds2.OrgID, int64(1))
+	require.Equal(t, ds2.Folder, "")
+	require.Equal(t, ds2.FolderUID, "")
+	require.False(t, ds2.Editable)
+	require.Equal(t, len(ds2.Options), 1)
+	require.Equal(t, ds2.Options["path"], "/var/lib/grafana/dashboards")
+	require.False(t, ds2.DisableDeletion)
+	require.Equal(t, ds2.UpdateIntervalSeconds, int64(10))
 }

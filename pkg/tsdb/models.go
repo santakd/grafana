@@ -6,19 +6,22 @@ import (
 	"github.com/grafana/grafana/pkg/models"
 )
 
+// TsdbQuery contains all information about a query request.
 type TsdbQuery struct {
 	TimeRange *TimeRange
 	Queries   []*Query
+	Headers   map[string]string
+	Debug     bool
+	User      *models.SignedInUser
 }
 
 type Query struct {
 	RefId         string
 	Model         *simplejson.Json
-	Depends       []string
 	DataSource    *models.DataSource
-	Results       []*TimeSeries
 	MaxDataPoints int64
 	IntervalMs    int64
+	QueryType     string
 }
 
 type Response struct {
@@ -33,6 +36,7 @@ type QueryResult struct {
 	Meta        *simplejson.Json `json:"meta,omitempty"`
 	Series      TimeSeriesSlice  `json:"series"`
 	Tables      []*Table         `json:"tables"`
+	Dataframes  [][]byte         `json:"dataframes"`
 }
 
 type TimeSeries struct {

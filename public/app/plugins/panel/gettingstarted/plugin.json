@@ -3,11 +3,12 @@
   "name": "Getting Started",
   "id": "gettingstarted",
 
+  "skipDataQuery": true,
   "hideFromList": true,
 
   "info": {
     "author": {
-      "name": "Grafana Project",
+      "name": "Grafana Labs",
       "url": "https://grafana.com"
     },
     "logos": {

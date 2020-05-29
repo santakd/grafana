@@ -1,29 +1,20 @@
+const esModule = '@iconscout/react-unicons';
 
 module.exports = {
   verbose: false,
-  "globals": {
-    "ts-jest": {
-      "tsConfigFile": "tsconfig.json"
-    }
+  transform: {
+    '^.+\\.(ts|tsx|js|jsx)$': 'ts-jest',
+    [`(${esModule}).+\\.js$`]: 'babel-jest',
   },
-  "transform": {
-    "^.+\\.tsx?$": "<rootDir>/node_modules/ts-jest/preprocessor.js"
+  transformIgnorePatterns: [`/node_modules/(?!${esModule})`],
+  moduleDirectories: ['node_modules', 'public'],
+  roots: ['<rootDir>/public/app', '<rootDir>/public/test', '<rootDir>/packages', '<rootDir>/scripts'],
+  testRegex: '(\\.|/)(test)\\.(jsx?|tsx?)$',
+  moduleFileExtensions: ['ts', 'tsx', 'js', 'jsx', 'json'],
+  setupFiles: ['jest-canvas-mock', './public/test/jest-shim.ts', './public/test/jest-setup.ts'],
+  snapshotSerializers: ['enzyme-to-json/serializer'],
+  globals: { 'ts-jest': { isolatedModules: true } },
+  moduleNameMapper: {
+    '\\.svg': '<rootDir>/public/test/mocks/svg.ts',
   },
-  "moduleDirectories": ["node_modules", "public"],
-  "roots": [
-    "<rootDir>/public"
-  ],
-  "testRegex": "(\\.|/)(jest)\\.(jsx?|tsx?)$",
-  "moduleFileExtensions": [
-    "ts",
-    "tsx",
-    "js",
-    "jsx",
-    "json"
-  ],
-  "setupFiles": [
-    "./public/test/jest-shim.ts",
-    "./public/test/jest-setup.ts"
-  ],
-  "snapshotSerializers": ["enzyme-to-json/serializer"],
 };

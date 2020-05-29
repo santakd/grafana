@@ -1,53 +1,54 @@
 package api
 
 import (
+	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/base64"
-	"errors"
+	"encoding/hex"
 	"fmt"
 	"io/ioutil"
 	"net/http"
 	"net/url"
 
-	"golang.org/x/net/context"
 	"golang.org/x/oauth2"
 
 	"github.com/grafana/grafana/pkg/bus"
-	"github.com/grafana/grafana/pkg/log"
-	"github.com/grafana/grafana/pkg/metrics"
+	"github.com/grafana/grafana/pkg/infra/log"
+	"github.com/grafana/grafana/pkg/infra/metrics"
+	"github.com/grafana/grafana/pkg/login"
+	"github.com/grafana/grafana/pkg/login/social"
 	"github.com/grafana/grafana/pkg/middleware"
-	m "github.com/grafana/grafana/pkg/models"
+	"github.com/grafana/grafana/pkg/models"
 	"github.com/grafana/grafana/pkg/setting"
-	"github.com/grafana/grafana/pkg/social"
 )
 
 var (
-	ErrProviderDeniedRequest = errors.New("Login provider denied login request")
-	ErrEmailNotAllowed       = errors.New("Required email domain not fulfilled")
-	ErrSignUpNotAllowed      = errors.New("Signup is not allowed for this adapter")
-	ErrUsersQuotaReached     = errors.New("Users quota reached")
-	ErrNoEmail               = errors.New("Login provider didn't return an email address")
-	oauthLogger              = log.New("oauth.login")
+	oauthLogger          = log.New("oauth")
+	OauthStateCookieName = "oauth_state"
 )
 
-func GenStateString() string {
+func GenStateString() (string, error) {
 	rnd := make([]byte, 32)
-	rand.Read(rnd)
-	return base64.StdEncoding.EncodeToString(rnd)
+	if _, err := rand.Read(rnd); err != nil {
+		oauthLogger.Error("failed to generate state string", "err", err)
+		return "", err
+	}
+	return base64.URLEncoding.EncodeToString(rnd), nil
 }
 
-func OAuthLogin(ctx *middleware.Context) {
+func (hs *HTTPServer) OAuthLogin(ctx *models.ReqContext) {
 	if setting.OAuthService == nil {
-		ctx.Handle(404, "login.OAuthLogin(oauth service not enabled)", nil)
+		ctx.Handle(404, "OAuth not enabled", nil)
 		return
 	}
 
 	name := ctx.Params(":name")
 	connect, ok := social.SocialMap[name]
 	if !ok {
-		ctx.Handle(404, "login.OAuthLogin(social login not enabled)", errors.New(name))
+		ctx.Handle(404, fmt.Sprintf("No OAuth with name %s configured", name), nil)
 		return
 	}
 
@@ -55,14 +56,21 @@ func OAuthLogin(ctx *middleware.Context) {
 	if errorParam != "" {
 		errorDesc := ctx.Query("error_description")
 		oauthLogger.Error("failed to login ", "error", errorParam, "errorDesc", errorDesc)
-		redirectWithError(ctx, ErrProviderDeniedRequest, "error", errorParam, "errorDesc", errorDesc)
+		hs.redirectWithError(ctx, login.ErrProviderDeniedRequest, "error", errorParam, "errorDesc", errorDesc)
 		return
 	}
 
 	code := ctx.Query("code")
 	if code == "" {
-		state := GenStateString()
-		ctx.Session.Set(middleware.SESS_KEY_OAUTH_STATE, state)
+		state, err := GenStateString()
+		if err != nil {
+			ctx.Logger.Error("Generating state string failed", "err", err)
+			ctx.Handle(500, "An internal error occurred", nil)
+			return
+		}
+
+		hashedState := hashStatecode(state, setting.OAuthService.OAuthInfos[name].ClientSecret)
+		middleware.WriteCookie(ctx.Resp, OauthStateCookieName, hashedState, hs.Cfg.OAuthCookieMaxAge, hs.CookieOptionsFromCfg)
 		if setting.OAuthService.OAuthInfos[name].HostedDomain == "" {
 			ctx.Redirect(connect.AuthCodeURL(state, oauth2.AccessTypeOnline))
 		} else {
@@ -71,20 +79,26 @@ func OAuthLogin(ctx *middleware.Context) {
 		return
 	}
 
-	savedState, ok := ctx.Session.Get(middleware.SESS_KEY_OAUTH_STATE).(string)
-	if !ok {
+	cookieState := ctx.GetCookie(OauthStateCookieName)
+
+	// delete cookie
+	middleware.DeleteCookie(ctx.Resp, OauthStateCookieName, hs.CookieOptionsFromCfg)
+
+	if cookieState == "" {
 		ctx.Handle(500, "login.OAuthLogin(missing saved state)", nil)
 		return
 	}
 
-	queryState := ctx.Query("state")
-	if savedState != queryState {
+	queryState := hashStatecode(ctx.Query("state"), setting.OAuthService.OAuthInfos[name].ClientSecret)
+	oauthLogger.Info("state check", "queryState", queryState, "cookieState", cookieState)
+	if cookieState != queryState {
 		ctx.Handle(500, "login.OAuthLogin(state mismatch)", nil)
 		return
 	}
 
 	// handle call back
 	tr := &http.Transport{
+		Proxy: http.ProxyFromEnvironment,
 		TLSClientConfig: &tls.Config{
 			InsecureSkipVerify: setting.OAuthService.OAuthInfos[name].TlsSkipVerify,
 		},
@@ -96,7 +110,9 @@ func OAuthLogin(ctx *middleware.Context) {
 	if setting.OAuthService.OAuthInfos[name].TlsClientCert != "" || setting.OAuthService.OAuthInfos[name].TlsClientKey != "" {
 		cert, err := tls.LoadX509KeyPair(setting.OAuthService.OAuthInfos[name].TlsClientCert, setting.OAuthService.OAuthInfos[name].TlsClientKey)
 		if err != nil {
-			log.Fatal(1, "Failed to setup TlsClientCert", "oauth provider", name, "error", err)
+			ctx.Logger.Error("Failed to setup TlsClientCert", "oauth", name, "error", err)
+			ctx.Handle(500, "login.OAuthLogin(Failed to setup TlsClientCert)", nil)
+			return
 		}
 
 		tr.TLSClientConfig.Certificates = append(tr.TLSClientConfig.Certificates, cert)
@@ -105,7 +121,9 @@ func OAuthLogin(ctx *middleware.Context) {
 	if setting.OAuthService.OAuthInfos[name].TlsClientCa != "" {
 		caCert, err := ioutil.ReadFile(setting.OAuthService.OAuthInfos[name].TlsClientCa)
 		if err != nil {
-			log.Fatal(1, "Failed to setup TlsClientCa", "oauth provider", name, "error", err)
+			ctx.Logger.Error("Failed to setup TlsClientCa", "oauth", name, "error", err)
+			ctx.Handle(500, "login.OAuthLogin(Failed to setup TlsClientCa)", nil)
+			return
 		}
 		caCertPool := x509.NewCertPool()
 		caCertPool.AppendCertsFromPEM(caCert)
@@ -124,89 +142,103 @@ func OAuthLogin(ctx *middleware.Context) {
 	// token.TokenType was defaulting to "bearer", which is out of spec, so we explicitly set to "Bearer"
 	token.TokenType = "Bearer"
 
-	ctx.Logger.Debug("OAuthLogin Got token")
+	oauthLogger.Debug("OAuthLogin Got token", "token", token)
 
 	// set up oauth2 client
 	client := connect.Client(oauthCtx, token)
 
 	// get user info
-	userInfo, err := connect.UserInfo(client)
+	userInfo, err := connect.UserInfo(client, token)
 	if err != nil {
 		if sErr, ok := err.(*social.Error); ok {
-			redirectWithError(ctx, sErr)
+			hs.redirectWithError(ctx, sErr)
 		} else {
 			ctx.Handle(500, fmt.Sprintf("login.OAuthLogin(get info from %s)", name), err)
 		}
 		return
 	}
 
-	ctx.Logger.Debug("OAuthLogin got user info", "userInfo", userInfo)
+	oauthLogger.Debug("OAuthLogin got user info", "userInfo", userInfo)
 
 	// validate that we got at least an email address
 	if userInfo.Email == "" {
-		redirectWithError(ctx, ErrNoEmail)
+		hs.redirectWithError(ctx, login.ErrNoEmail)
 		return
 	}
 
 	// validate that the email is allowed to login to grafana
 	if !connect.IsEmailAllowed(userInfo.Email) {
-		redirectWithError(ctx, ErrEmailNotAllowed)
+		hs.redirectWithError(ctx, login.ErrEmailNotAllowed)
 		return
 	}
 
-	userQuery := m.GetUserByEmailQuery{Email: userInfo.Email}
-	err = bus.Dispatch(&userQuery)
+	extUser := &models.ExternalUserInfo{
+		AuthModule: "oauth_" + name,
+		OAuthToken: token,
+		AuthId:     userInfo.Id,
+		Name:       userInfo.Name,
+		Login:      userInfo.Login,
+		Email:      userInfo.Email,
+		OrgRoles:   map[int64]models.RoleType{},
+		Groups:     userInfo.Groups,
+	}
 
-	// create account if missing
-	if err == m.ErrUserNotFound {
-		if !connect.IsSignupAllowed() {
-			redirectWithError(ctx, ErrSignUpNotAllowed)
-			return
+	if userInfo.Role != "" {
+		rt := models.RoleType(userInfo.Role)
+		if rt.IsValid() {
+			var orgID int64
+			if setting.AutoAssignOrg && setting.AutoAssignOrgId > 0 {
+				orgID = int64(setting.AutoAssignOrgId)
+			} else {
+				orgID = int64(1)
+			}
+			extUser.OrgRoles[orgID] = rt
 		}
-		limitReached, err := middleware.QuotaReached(ctx, "user")
-		if err != nil {
-			ctx.Handle(500, "Failed to get user quota", err)
-			return
-		}
-		if limitReached {
-			redirectWithError(ctx, ErrUsersQuotaReached)
-			return
-		}
-		cmd := m.CreateUserCommand{
-			Login:          userInfo.Login,
-			Email:          userInfo.Email,
-			Name:           userInfo.Name,
-			Company:        userInfo.Company,
-			DefaultOrgRole: userInfo.Role,
-		}
+	}
 
-		if err = bus.Dispatch(&cmd); err != nil {
-			ctx.Handle(500, "Failed to create account", err)
-			return
-		}
+	// add/update user in grafana
+	cmd := &models.UpsertUserCommand{
+		ReqContext:    ctx,
+		ExternalUser:  extUser,
+		SignupAllowed: connect.IsSignupAllowed(),
+	}
 
-		userQuery.Result = &cmd.Result
-	} else if err != nil {
-		ctx.Handle(500, "Unexpected error", err)
+	err = bus.Dispatch(cmd)
+	if err != nil {
+		hs.redirectWithError(ctx, err)
+		return
+	}
+
+	// Do not expose disabled status,
+	// just show incorrect user credentials error (see #17947)
+	if cmd.Result.IsDisabled {
+		oauthLogger.Warn("User is disabled", "user", cmd.Result.Login)
+		hs.redirectWithError(ctx, login.ErrInvalidCredentials)
+		return
 	}
 
 	// login
-	loginUserWithUser(userQuery.Result, ctx)
+	err = hs.loginUserWithUser(cmd.Result, ctx)
+	if err != nil {
+		hs.redirectWithError(ctx, err)
+		return
+	}
 
-	metrics.M_Api_Login_OAuth.Inc()
+	metrics.MApiLoginOAuth.Inc()
 
 	if redirectTo, _ := url.QueryUnescape(ctx.GetCookie("redirect_to")); len(redirectTo) > 0 {
-		ctx.SetCookie("redirect_to", "", -1, setting.AppSubUrl+"/")
-		ctx.Redirect(redirectTo)
-		return
+		if err := hs.ValidateRedirectTo(redirectTo); err == nil {
+			middleware.DeleteCookie(ctx.Resp, "redirect_to", hs.CookieOptionsFromCfg)
+			ctx.Redirect(redirectTo)
+			return
+		}
+		log.Debug("Ignored invalid redirect_to cookie value: %v", redirectTo)
 	}
 
 	ctx.Redirect(setting.AppSubUrl + "/")
 }
 
-func redirectWithError(ctx *middleware.Context, err error, v ...interface{}) {
-	ctx.Logger.Info(err.Error(), v...)
-	// TODO: we can use the flash storage here once it's implemented
-	ctx.Session.Set("loginError", err.Error())
-	ctx.Redirect(setting.AppSubUrl + "/login")
+func hashStatecode(code, seed string) string {
+	hashBytes := sha256.Sum256([]byte(code + setting.SecretKey + seed))
+	return hex.EncodeToString(hashBytes[:])
 }

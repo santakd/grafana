@@ -18,7 +18,7 @@ var (
 )
 
 func init() {
-	legendFormat = regexp.MustCompile(`\[\[(\w+?)*\]\]*|\$\s*(\w+?)*`)
+	legendFormat = regexp.MustCompile(`\[\[(\w+)(\.\w+)*\]\]*|\$\s*(\w+?)*`)
 }
 
 func (rp *ResponseParser) Parse(response *Response, query *Query) *tsdb.QueryResult {
@@ -26,6 +26,9 @@ func (rp *ResponseParser) Parse(response *Response, query *Query) *tsdb.QueryRes
 
 	for _, result := range response.Results {
 		queryRes.Series = append(queryRes.Series, rp.transformRows(result.Series, queryRes, query)...)
+		if result.Err != nil {
+			queryRes.Error = result.Err
+		}
 	}
 
 	return queryRes

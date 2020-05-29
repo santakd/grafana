@@ -4,103 +4,220 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/grafana/grafana/pkg/services/dashboards"
+	"github.com/grafana/grafana/pkg/util"
 
 	"github.com/grafana/grafana/pkg/bus"
 
 	"github.com/grafana/grafana/pkg/components/simplejson"
-	"github.com/grafana/grafana/pkg/log"
+	"github.com/grafana/grafana/pkg/infra/log"
 	"github.com/grafana/grafana/pkg/models"
 )
 
 var (
-	checkDiskForChangesInterval time.Duration = time.Second * 3
-
-	ErrFolderNameMissing error = errors.New("Folder name missing")
+	// ErrFolderNameMissing is returned when folder name is missing.
+	ErrFolderNameMissing = errors.New("Folder name missing")
 )
 
-type fileReader struct {
-	Cfg           *DashboardsAsConfig
-	Path          string
-	log           log.Logger
-	dashboardRepo dashboards.Repository
-	cache         *dashboardCache
-	createWalk    func(fr *fileReader, folderId int64) filepath.WalkFunc
+// FileReader is responsible for reading dashboards from disc and
+// insert/update dashboards to the Grafana database using
+// `dashboards.DashboardProvisioningService`
+type FileReader struct {
+	Cfg                          *config
+	Path                         string
+	log                          log.Logger
+	dashboardProvisioningService dashboards.DashboardProvisioningService
 }
 
-func NewDashboardFileReader(cfg *DashboardsAsConfig, log log.Logger) (*fileReader, error) {
-	path, ok := cfg.Options["folder"].(string)
+// NewDashboardFileReader returns a new filereader based on `config`
+func NewDashboardFileReader(cfg *config, log log.Logger) (*FileReader, error) {
+	var path string
+	path, ok := cfg.Options["path"].(string)
 	if !ok {
-		return nil, fmt.Errorf("Failed to load dashboards. folder param is not a string")
+		path, ok = cfg.Options["folder"].(string)
+		if !ok {
+			return nil, fmt.Errorf("Failed to load dashboards. path param is not a string")
+		}
+
+		log.Warn("[Deprecated] The folder property is deprecated. Please use path instead.")
 	}
 
-	if _, err := os.Stat(path); os.IsNotExist(err) {
-		log.Error("Cannot read directory", "error", err)
-	}
-
-	return &fileReader{
-		Cfg:           cfg,
-		Path:          path,
-		log:           log,
-		dashboardRepo: dashboards.GetRepository(),
-		cache:         NewDashboardCache(),
-		createWalk:    createWalkFn,
+	return &FileReader{
+		Cfg:                          cfg,
+		Path:                         path,
+		log:                          log,
+		dashboardProvisioningService: dashboards.NewProvisioningService(),
 	}, nil
 }
 
-func (fr *fileReader) ReadAndListen(ctx context.Context) error {
-	ticker := time.NewTicker(checkDiskForChangesInterval)
+// pollChanges periodically runs startWalkingDisk based on interval specified in the config.
+func (fr *FileReader) pollChanges(ctx context.Context) {
 
-	if err := fr.startWalkingDisk(); err != nil {
-		fr.log.Error("failed to search for dashboards", "error", err)
-	}
-
-	running := false
-
+	ticker := time.NewTicker(time.Duration(int64(time.Second) * fr.Cfg.UpdateIntervalSeconds))
 	for {
 		select {
 		case <-ticker.C:
-			if !running { // avoid walking the filesystem in parallel. incase fs is very slow.
-				running = true
-				go func() {
-					if err := fr.startWalkingDisk(); err != nil {
-						fr.log.Error("failed to search for dashboards", "error", err)
-					}
-					running = false
-				}()
+			if err := fr.startWalkingDisk(); err != nil {
+				fr.log.Error("failed to search for dashboards", "error", err)
 			}
 		case <-ctx.Done():
-			return nil
+			return
 		}
 	}
 }
 
-func (fr *fileReader) startWalkingDisk() error {
-	if _, err := os.Stat(fr.Path); err != nil {
-		if os.IsNotExist(err) {
-			return err
-		}
+// startWalkingDisk traverses the file system for defined path, reads dashboard definition files and applies any change
+// to the database.
+func (fr *FileReader) startWalkingDisk() error {
+	fr.log.Debug("Start walking disk", "path", fr.Path)
+	resolvedPath := fr.resolvedPath()
+	if _, err := os.Stat(resolvedPath); err != nil {
+		return err
 	}
 
-	folderId, err := getOrCreateFolderId(fr.Cfg, fr.dashboardRepo)
+	folderID, err := getOrCreateFolderID(fr.Cfg, fr.dashboardProvisioningService)
 	if err != nil && err != ErrFolderNameMissing {
 		return err
 	}
 
-	return filepath.Walk(fr.Path, fr.createWalk(fr, folderId))
+	provisionedDashboardRefs, err := getProvisionedDashboardByPath(fr.dashboardProvisioningService, fr.Cfg.Name)
+	if err != nil {
+		return err
+	}
+
+	filesFoundOnDisk := map[string]os.FileInfo{}
+	err = filepath.Walk(resolvedPath, createWalkFn(filesFoundOnDisk))
+	if err != nil {
+		return err
+	}
+
+	fr.handleMissingDashboardFiles(provisionedDashboardRefs, filesFoundOnDisk)
+
+	sanityChecker := newProvisioningSanityChecker(fr.Cfg.Name)
+
+	// save dashboards based on json files
+	for path, fileInfo := range filesFoundOnDisk {
+		provisioningMetadata, err := fr.saveDashboard(path, folderID, fileInfo, provisionedDashboardRefs)
+		sanityChecker.track(provisioningMetadata)
+		if err != nil {
+			fr.log.Error("failed to save dashboard", "error", err)
+		}
+	}
+	sanityChecker.logWarnings(fr.log)
+
+	return nil
 }
 
-func getOrCreateFolderId(cfg *DashboardsAsConfig, repo dashboards.Repository) (int64, error) {
+// handleMissingDashboardFiles will unprovision or delete dashboards which are missing on disk.
+func (fr *FileReader) handleMissingDashboardFiles(provisionedDashboardRefs map[string]*models.DashboardProvisioning, filesFoundOnDisk map[string]os.FileInfo) {
+	// find dashboards to delete since json file is missing
+	var dashboardToDelete []int64
+	for path, provisioningData := range provisionedDashboardRefs {
+		_, existsOnDisk := filesFoundOnDisk[path]
+		if !existsOnDisk {
+			dashboardToDelete = append(dashboardToDelete, provisioningData.DashboardId)
+		}
+	}
+
+	if fr.Cfg.DisableDeletion {
+		// If deletion is disabled for the provisioner we just remove provisioning metadata about the dashboard
+		// so afterwards the dashboard is considered unprovisioned.
+		for _, dashboardID := range dashboardToDelete {
+			fr.log.Debug("unprovisioning provisioned dashboard. missing on disk", "id", dashboardID)
+			err := fr.dashboardProvisioningService.UnprovisionDashboard(dashboardID)
+			if err != nil {
+				fr.log.Error("failed to unprovision dashboard", "dashboard_id", dashboardID, "error", err)
+			}
+		}
+	} else {
+		// delete dashboard that are missing json file
+		for _, dashboardID := range dashboardToDelete {
+			fr.log.Debug("deleting provisioned dashboard. missing on disk", "id", dashboardID)
+			err := fr.dashboardProvisioningService.DeleteProvisionedDashboard(dashboardID, fr.Cfg.OrgID)
+			if err != nil {
+				fr.log.Error("failed to delete dashboard", "id", dashboardID, "error", err)
+			}
+		}
+	}
+}
+
+// saveDashboard saves or updates the dashboard provisioning file at path.
+func (fr *FileReader) saveDashboard(path string, folderID int64, fileInfo os.FileInfo, provisionedDashboardRefs map[string]*models.DashboardProvisioning) (provisioningMetadata, error) {
+	provisioningMetadata := provisioningMetadata{}
+	resolvedFileInfo, err := resolveSymlink(fileInfo, path)
+	if err != nil {
+		return provisioningMetadata, err
+	}
+
+	provisionedData, alreadyProvisioned := provisionedDashboardRefs[path]
+	upToDate := alreadyProvisioned && provisionedData.Updated >= resolvedFileInfo.ModTime().Unix()
+
+	jsonFile, err := fr.readDashboardFromFile(path, resolvedFileInfo.ModTime(), folderID)
+	if err != nil {
+		fr.log.Error("failed to load dashboard from ", "file", path, "error", err)
+		return provisioningMetadata, nil
+	}
+
+	if provisionedData != nil && jsonFile.checkSum == provisionedData.CheckSum {
+		upToDate = true
+	}
+
+	// keeps track of what uid's and title's we have already provisioned
+	dash := jsonFile.dashboard
+	provisioningMetadata.uid = dash.Dashboard.Uid
+	provisioningMetadata.title = dash.Dashboard.Title
+
+	if upToDate {
+		return provisioningMetadata, nil
+	}
+
+	if dash.Dashboard.Id != 0 {
+		dash.Dashboard.Data.Set("id", nil)
+		dash.Dashboard.Id = 0
+	}
+
+	if alreadyProvisioned {
+		dash.Dashboard.SetId(provisionedData.DashboardId)
+	}
+
+	fr.log.Debug("saving new dashboard", "provisioner", fr.Cfg.Name, "file", path, "folderId", dash.Dashboard.FolderId)
+	dp := &models.DashboardProvisioning{
+		ExternalId: path,
+		Name:       fr.Cfg.Name,
+		Updated:    resolvedFileInfo.ModTime().Unix(),
+		CheckSum:   jsonFile.checkSum,
+	}
+
+	_, err = fr.dashboardProvisioningService.SaveProvisionedDashboard(dash, dp)
+	return provisioningMetadata, err
+}
+
+func getProvisionedDashboardByPath(service dashboards.DashboardProvisioningService, name string) (map[string]*models.DashboardProvisioning, error) {
+	arr, err := service.GetProvisionedDashboardData(name)
+	if err != nil {
+		return nil, err
+	}
+
+	byPath := map[string]*models.DashboardProvisioning{}
+	for _, pd := range arr {
+		byPath[pd.ExternalId] = pd
+	}
+
+	return byPath, nil
+}
+
+func getOrCreateFolderID(cfg *config, service dashboards.DashboardProvisioningService) (int64, error) {
 	if cfg.Folder == "" {
 		return 0, ErrFolderNameMissing
 	}
 
-	cmd := &models.GetDashboardQuery{Slug: models.SlugifyTitle(cfg.Folder), OrgId: cfg.OrgId}
+	cmd := &models.GetDashboardQuery{Slug: models.SlugifyTitle(cfg.Folder), OrgId: cfg.OrgID}
 	err := bus.Dispatch(cmd)
 
 	if err != nil && err != models.ErrDashboardNotFound {
@@ -109,12 +226,14 @@ func getOrCreateFolderId(cfg *DashboardsAsConfig, repo dashboards.Repository) (i
 
 	// dashboard folder not found. create one.
 	if err == models.ErrDashboardNotFound {
-		dash := &dashboards.SaveDashboardItem{}
-		dash.Dashboard = models.NewDashboard(cfg.Folder)
+		dash := &dashboards.SaveDashboardDTO{}
+		dash.Dashboard = models.NewDashboardFolder(cfg.Folder)
 		dash.Dashboard.IsFolder = true
 		dash.Overwrite = true
-		dash.OrgId = cfg.OrgId
-		dbDash, err := repo.SaveDashboard(dash)
+		dash.OrgId = cfg.OrgID
+		// set dashboard folderUid if given
+		dash.Dashboard.SetUid(cfg.FolderUID)
+		dbDash, err := service.SaveFolderForProvisionedDashboards(dash)
 		if err != nil {
 			return 0, err
 		}
@@ -123,91 +242,156 @@ func getOrCreateFolderId(cfg *DashboardsAsConfig, repo dashboards.Repository) (i
 	}
 
 	if !cmd.Result.IsFolder {
-		return 0, fmt.Errorf("Got invalid response. Expected folder, found dashboard")
+		return 0, fmt.Errorf("got invalid response. expected folder, found dashboard")
 	}
 
 	return cmd.Result.Id, nil
 }
 
-func createWalkFn(fr *fileReader, folderId int64) filepath.WalkFunc {
+func resolveSymlink(fileinfo os.FileInfo, path string) (os.FileInfo, error) {
+	checkFilepath, err := filepath.EvalSymlinks(path)
+	if path != checkFilepath {
+		fi, err := os.Lstat(checkFilepath)
+		if err != nil {
+			return nil, err
+		}
+
+		return fi, nil
+	}
+
+	return fileinfo, err
+}
+
+func createWalkFn(filesOnDisk map[string]os.FileInfo) filepath.WalkFunc {
 	return func(path string, fileInfo os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
-		if fileInfo.IsDir() {
-			if strings.HasPrefix(fileInfo.Name(), ".") {
-				return filepath.SkipDir
-			}
-			return nil
-		}
 
-		if !strings.HasSuffix(fileInfo.Name(), ".json") {
-			return nil
-		}
-
-		cachedDashboard, exist := fr.cache.getCache(path)
-		if exist && cachedDashboard.UpdatedAt == fileInfo.ModTime() {
-			return nil
-		}
-
-		dash, err := fr.readDashboardFromFile(path, folderId)
-		if err != nil {
-			fr.log.Error("failed to load dashboard from ", "file", path, "error", err)
-			return nil
-		}
-
-		// id = 0 indicates ID validation should be avoided before writing to the db.
-		dash.Dashboard.Id = 0
-
-		cmd := &models.GetDashboardQuery{Slug: dash.Dashboard.Slug}
-		err = bus.Dispatch(cmd)
-
-		// if we dont have the dashboard in the db, save it!
-		if err == models.ErrDashboardNotFound {
-			fr.log.Debug("saving new dashboard", "file", path)
-			_, err = fr.dashboardRepo.SaveDashboard(dash)
+		isValid, err := validateWalkablePath(fileInfo)
+		if !isValid {
 			return err
 		}
 
-		if err != nil {
-			fr.log.Error("failed to query for dashboard", "slug", dash.Dashboard.Slug, "error", err)
-			return nil
-		}
-
-		// break if db version is newer then fil version
-		if cmd.Result.Updated.Unix() >= fileInfo.ModTime().Unix() {
-			return nil
-		}
-
-		fr.log.Debug("loading dashboard from disk into database.", "file", path)
-		_, err = fr.dashboardRepo.SaveDashboard(dash)
-		return err
+		filesOnDisk[path] = fileInfo
+		return nil
 	}
 }
 
-func (fr *fileReader) readDashboardFromFile(path string, folderId int64) (*dashboards.SaveDashboardItem, error) {
+func validateWalkablePath(fileInfo os.FileInfo) (bool, error) {
+	if fileInfo.IsDir() {
+		if strings.HasPrefix(fileInfo.Name(), ".") {
+			return false, filepath.SkipDir
+		}
+		return false, nil
+	}
+
+	if !strings.HasSuffix(fileInfo.Name(), ".json") {
+		return false, nil
+	}
+
+	return true, nil
+}
+
+type dashboardJSONFile struct {
+	dashboard    *dashboards.SaveDashboardDTO
+	checkSum     string
+	lastModified time.Time
+}
+
+func (fr *FileReader) readDashboardFromFile(path string, lastModified time.Time, folderID int64) (*dashboardJSONFile, error) {
 	reader, err := os.Open(path)
 	if err != nil {
 		return nil, err
 	}
 	defer reader.Close()
 
-	data, err := simplejson.NewFromReader(reader)
+	all, err := ioutil.ReadAll(reader)
 	if err != nil {
 		return nil, err
 	}
 
-	stat, err := os.Stat(path)
+	checkSum, err := util.Md5SumString(string(all))
 	if err != nil {
 		return nil, err
 	}
 
-	dash, err := createDashboardJson(data, stat.ModTime(), fr.Cfg, folderId)
+	data, err := simplejson.NewJson(all)
 	if err != nil {
 		return nil, err
 	}
 
-	fr.cache.addDashboardCache(path, dash)
+	dash, err := createDashboardJSON(data, lastModified, fr.Cfg, folderID)
+	if err != nil {
+		return nil, err
+	}
 
-	return dash, nil
+	return &dashboardJSONFile{
+		dashboard:    dash,
+		checkSum:     checkSum,
+		lastModified: lastModified,
+	}, nil
+}
+
+func (fr *FileReader) resolvedPath() string {
+	if _, err := os.Stat(fr.Path); os.IsNotExist(err) {
+		fr.log.Error("Cannot read directory", "error", err)
+	}
+
+	path, err := filepath.Abs(fr.Path)
+	if err != nil {
+		fr.log.Error("Could not create absolute path", "path", fr.Path, "error", err)
+	}
+
+	path, err = filepath.EvalSymlinks(path)
+	if err != nil {
+		fr.log.Error("Failed to read content of symlinked path", "path", fr.Path, "error", err)
+	}
+
+	if path == "" {
+		path = fr.Path
+		fr.log.Info("falling back to original path due to EvalSymlink/Abs failure")
+	}
+	return path
+}
+
+type provisioningMetadata struct {
+	uid   string
+	title string
+}
+
+func newProvisioningSanityChecker(provisioningProvider string) provisioningSanityChecker {
+	return provisioningSanityChecker{
+		provisioningProvider: provisioningProvider,
+		uidUsage:             map[string]uint8{},
+		titleUsage:           map[string]uint8{}}
+}
+
+type provisioningSanityChecker struct {
+	provisioningProvider string
+	uidUsage             map[string]uint8
+	titleUsage           map[string]uint8
+}
+
+func (checker provisioningSanityChecker) track(pm provisioningMetadata) {
+	if len(pm.uid) > 0 {
+		checker.uidUsage[pm.uid]++
+	}
+	if len(pm.title) > 0 {
+		checker.titleUsage[pm.title]++
+	}
+}
+
+func (checker provisioningSanityChecker) logWarnings(log log.Logger) {
+	for uid, times := range checker.uidUsage {
+		if times > 1 {
+			log.Error("the same 'uid' is used more than once", "uid", uid, "provider", checker.provisioningProvider)
+		}
+	}
+
+	for title, times := range checker.titleUsage {
+		if times > 1 {
+			log.Error("the same 'title' is used more than once", "title", title, "provider", checker.provisioningProvider)
+		}
+	}
 }

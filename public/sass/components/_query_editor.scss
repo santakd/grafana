@@ -1,178 +1,139 @@
 .query-keyword {
   font-weight: $font-weight-semi-bold;
-  color: $query-blue;
-}
-
-.gf-form-disabled {
-  .query-keyword {
-    color: darken($query-blue, 20%);
-  }
+  color: $text-blue;
 }
 
 .query-segment-operator {
   color: $orange;
 }
 
-.gf-form-query {
-  display: flex;
-  flex-direction: row;
-  flex-wrap: nowrap;
-  align-content: flex-start;
-  align-items: flex-start;
+.query-placeholder {
+  color: $gray-2;
+}
 
-  .gf-form,
-  .gf-form-filler {
-    margin-bottom: 2px;
-  }
+.tight-form-func {
+  background: $tight-form-func-bg;
 
-  .gf-form-switch,
-  .gf-form-switch label,
-  .gf-form-input,
-  .gf-form-select-wrapper,
-  .gf-form-filler,
-  .gf-form-label {
-    margin-right: 2px;
-  }
-
-  .gf-form + .gf-form {
-    margin-right: 0;
+  &.show-function-controls {
+    padding-top: 5px;
+    min-width: 100px;
+    text-align: center;
   }
 }
 
-.gf-form-query-content {
-  flex-grow: 2;
+input[type='text'].tight-form-func-param {
+  font-size: $font-size-sm;
+  background: transparent;
+  border: none;
+  margin: 0;
+  padding: 0;
+}
 
-  &--collapsed {
-    overflow: hidden;
+.tight-form-func-controls {
+  text-align: center;
 
-    .gf-form-label {
-      overflow: hidden;
-      text-overflow: ellipsis;
-      width: 100%;
-      white-space: nowrap;
+  .fa-arrow-left {
+    float: left;
+    position: relative;
+    top: 2px;
+  }
+  .fa-arrow-right {
+    float: right;
+    position: relative;
+    top: 2px;
+  }
+  .fa-remove {
+    margin-left: 10px;
+  }
+}
+
+.grafana-metric-options {
+  margin-top: 25px;
+}
+
+.tight-form-func {
+  background: $tight-form-func-bg;
+
+  &.show-function-controls {
+    padding-top: 5px;
+    min-width: 100px;
+    text-align: center;
+  }
+}
+
+.rst-text::before {
+  content: ' ';
+}
+
+.rst-unknown.rst-directive {
+  font-family: monospace;
+  margin-bottom: $space-md;
+}
+
+.rst-interpreted_text {
+  font-family: monospace;
+  display: inline;
+}
+
+.rst-bullet-list {
+  padding-left: $space-lg;
+  margin-bottom: $space-md;
+}
+
+.rst-paragraph:last-child {
+  margin-bottom: 0;
+}
+
+.drop-element.drop-popover.drop-function-def .drop-content {
+  max-width: 416px;
+}
+
+.rst-literal-block .rst-text {
+  display: block;
+}
+
+.query-editor-row {
+  margin-bottom: 2px;
+
+  &:hover {
+    .query-editor-row__actions {
+      display: flex;
+    }
+  }
+
+  &--disabled {
+    .query-keyword {
+      color: $text-color-weak;
     }
   }
 }
 
-.gf-form-query-letter-cell {
-  .gf-form-query-letter-cell-carret {
-    display: inline-block;
-    width: 0.7rem;
-    position: relative;
-    left: -2px;
-  }
-  .gf-form-query-letter-cell-letter {
-    font-weight: bold;
-    color: $query-blue;
-  }
-  .gf-form-query-letter-cell-ds {
-    color: $text-color-weak;
-  }
+.query-editor-row__header {
+  display: flex;
+  padding: 4px 0px 4px 8px;
+  position: relative;
+  height: 35px;
+  background: $input-label-bg;
+  flex-wrap: nowrap;
+  align-items: center;
 }
 
-.gf-query-ds-label {
-  text-align: center;
-  width: 44px;
-}
-
-.grafana-metric-options {
-  margin-top: 25px;
-}
-
-.tight-form-func {
-  background: $tight-form-func-bg;
-
-  &.show-function-controls {
-    padding-top: 5px;
-    min-width: 100px;
-    text-align: center;
-  }
-}
-
-input[type="text"].tight-form-func-param {
+.query-editor-row__action {
+  margin-left: 3px;
   background: transparent;
   border: none;
-  margin: 0;
-  padding: 0;
-}
+  box-shadow: none;
 
-.tight-form-func-controls {
-  display: none;
-  text-align: center;
-
-  .fa-arrow-left {
-    float: left;
-    position: relative;
-    top: 2px;
-  }
-  .fa-arrow-right {
-    float: right;
-    position: relative;
-    top: 2px;
-  }
-  .fa-remove {
-    margin-left: 10px;
+  &:hover {
+    color: $text-color;
   }
 }
 
-.grafana-metric-options {
-  margin-top: 25px;
-}
+.query-editor-row__body {
+  margin: 2px 0 10px 40px;
+  background: $page-bg;
 
-.tight-form-func {
-  background: $tight-form-func-bg;
-
-  &.show-function-controls {
-    padding-top: 5px;
-    min-width: 100px;
-    text-align: center;
+  &--collapsed {
+    display: none;
   }
-}
-
-input[type="text"].tight-form-func-param {
-  background: transparent;
-  border: none;
-  margin: 0;
-  padding: 0;
-}
-
-.tight-form-func-controls {
-  display: none;
-  text-align: center;
-
-  .fa-arrow-left {
-    float: left;
-    position: relative;
-    top: 2px;
-  }
-  .fa-arrow-right {
-    float: right;
-    position: relative;
-    top: 2px;
-  }
-  .fa-remove {
-    margin-left: 10px;
-  }
-}
-
-.query-troubleshooter {
-  font-size: $font-size-sm;
-  margin: $gf-form-margin;
-  border: 1px solid $btn-secondary-bg;
-  min-height: 100px;
-  border-radius: 3px;
-}
-
-.query-troubleshooter__header {
-  float: right;
-  font-size: $font-size-sm;
-  text-align: right;
-  padding: $input-padding-y $input-padding-x;
-  a {
-    margin-left: $spacer;
-  }
-}
-
-.query-troubleshooter__body {
-  padding: $spacer 0;
 }

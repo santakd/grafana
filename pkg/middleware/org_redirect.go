@@ -9,10 +9,11 @@ import (
 	"github.com/grafana/grafana/pkg/bus"
 	"github.com/grafana/grafana/pkg/models"
 	"github.com/grafana/grafana/pkg/setting"
-
 	"gopkg.in/macaron.v1"
 )
 
+// OrgRedirect changes org and redirects users if the
+// querystring `orgId` doesn't match the active org.
 func OrgRedirect() macaron.Handler {
 	return func(res http.ResponseWriter, req *http.Request, c *macaron.Context) {
 		orgIdValue := req.URL.Query().Get("orgId")
@@ -22,7 +23,7 @@ func OrgRedirect() macaron.Handler {
 			return
 		}
 
-		ctx, ok := c.Data["ctx"].(*Context)
+		ctx, ok := c.Data["ctx"].(*models.ReqContext)
 		if !ok || !ctx.IsSignedIn {
 			return
 		}
