@@ -7,13 +7,15 @@ import (
 	"testing"
 
 	"github.com/grafana/grafana/pkg/infra/log"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 var (
 	symlinkedFolder = "testdata/test-dashboards/symlink"
 )
 
-func TestProvsionedSymlinkedFolder(t *testing.T) {
+func TestProvisionedSymlinkedFolder(t *testing.T) {
 	cfg := &config{
 		Name:    "Default",
 		Type:    "file",
@@ -22,19 +24,12 @@ func TestProvsionedSymlinkedFolder(t *testing.T) {
 		Options: map[string]interface{}{"path": symlinkedFolder},
 	}
 
-	reader, err := NewDashboardFileReader(cfg, log.New("test-logger"))
-	if err != nil {
-		t.Error("expected err to be nil")
-	}
+	reader, err := NewDashboardFileReader(cfg, log.New("test-logger"), nil)
+	require.NoError(t, err)
 
 	want, err := filepath.Abs(containingID)
-
-	if err != nil {
-		t.Errorf("expected err to be nil")
-	}
+	require.NoError(t, err)
 
 	resolvedPath := reader.resolvedPath()
-	if resolvedPath != want {
-		t.Errorf("got %s want %s", resolvedPath, want)
-	}
+	assert.Equal(t, want, resolvedPath)
 }

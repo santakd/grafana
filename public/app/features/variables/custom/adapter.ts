@@ -1,13 +1,14 @@
-import cloneDeep from 'lodash/cloneDeep';
-import { CustomVariableModel } from '../../templating/types';
+import { cloneDeep } from 'lodash';
+import { CustomVariableModel } from '../types';
 import { dispatch } from '../../../store/store';
 import { setOptionAsCurrent, setOptionFromUrl } from '../state/actions';
 import { VariableAdapter } from '../adapters';
 import { customVariableReducer, initialCustomVariableModelState } from './reducer';
-import { OptionsPicker } from '../pickers';
 import { CustomVariableEditor } from './CustomVariableEditor';
 import { updateCustomVariableOptions } from './actions';
 import { ALL_VARIABLE_TEXT, toVariableIdentifier } from '../state/types';
+import { isAllVariable } from '../utils';
+import { optionPickerFactory } from '../pickers';
 
 export const createCustomVariableAdapter = (): VariableAdapter<CustomVariableModel> => {
   return {
@@ -16,7 +17,7 @@ export const createCustomVariableAdapter = (): VariableAdapter<CustomVariableMod
     name: 'Custom',
     initialState: initialCustomVariableModelState,
     reducer: customVariableReducer,
-    picker: OptionsPicker,
+    picker: optionPickerFactory<CustomVariableModel>(),
     editor: CustomVariableEditor,
     dependsOn: () => {
       return false;
@@ -27,15 +28,15 @@ export const createCustomVariableAdapter = (): VariableAdapter<CustomVariableMod
     setValueFromUrl: async (variable, urlValue) => {
       await dispatch(setOptionFromUrl(toVariableIdentifier(variable), urlValue));
     },
-    updateOptions: async variable => {
+    updateOptions: async (variable) => {
       await dispatch(updateCustomVariableOptions(toVariableIdentifier(variable)));
     },
-    getSaveModel: variable => {
-      const { index, id, initLock, global, ...rest } = cloneDeep(variable);
+    getSaveModel: (variable) => {
+      const { index, id, state, global, ...rest } = cloneDeep(variable);
       return rest;
     },
-    getValueForUrl: variable => {
-      if (variable.current.text === ALL_VARIABLE_TEXT) {
+    getValueForUrl: (variable) => {
+      if (isAllVariable(variable)) {
         return ALL_VARIABLE_TEXT;
       }
       return variable.current.value;

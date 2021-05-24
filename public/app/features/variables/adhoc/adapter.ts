@@ -1,6 +1,6 @@
-import cloneDeep from 'lodash/cloneDeep';
+import { cloneDeep } from 'lodash';
 
-import { AdHocVariableModel } from '../../templating/types';
+import { AdHocVariableModel } from '../types';
 import { dispatch } from '../../../store/store';
 import { VariableAdapter } from '../adapters';
 import { AdHocPicker } from './picker/AdHocPicker';
@@ -14,7 +14,7 @@ const noop = async () => {};
 export const createAdHocVariableAdapter = (): VariableAdapter<AdHocVariableModel> => {
   return {
     id: 'adhoc',
-    description: 'Add key/value filters on the fly',
+    description: 'Add key/value filters on the fly.',
     name: 'Ad hoc filters',
     initialState: initialAdHocVariableModelState,
     reducer: adHocVariableReducer,
@@ -24,14 +24,14 @@ export const createAdHocVariableAdapter = (): VariableAdapter<AdHocVariableModel
     setValue: noop,
     setValueFromUrl: async (variable, urlValue) => {
       const filters = urlParser.toFilters(urlValue);
-      await dispatch(setFiltersFromUrl(variable.id!, filters));
+      await dispatch(setFiltersFromUrl(variable.id, filters));
     },
     updateOptions: noop,
-    getSaveModel: variable => {
-      const { index, id, initLock, global, ...rest } = cloneDeep(variable);
+    getSaveModel: (variable) => {
+      const { index, id, state, global, ...rest } = cloneDeep(variable);
       return rest;
     },
-    getValueForUrl: variable => {
+    getValueForUrl: (variable) => {
       const filters = variable?.filters ?? [];
       return urlParser.toUrl(filters);
     },

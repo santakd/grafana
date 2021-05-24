@@ -13,13 +13,13 @@
 // limitations under the License.
 
 import React from 'react';
-import _get from 'lodash/get';
+import { get as _get } from 'lodash';
 import IoChevronRight from 'react-icons/lib/io/chevron-right';
 import IoIosArrowDown from 'react-icons/lib/io/ios-arrow-down';
-import { css } from 'emotion';
+import { css } from '@emotion/css';
 import cx from 'classnames';
 
-import { Span } from '../types/trace';
+import { TraceSpan } from '../types/trace';
 import spanAncestorIds from '../utils/span-ancestor-ids';
 
 import { autoColor, createStyle, Theme, withTheme } from '../Theme';
@@ -34,7 +34,6 @@ export const getStyles = createStyle((theme: Theme) => {
     SpanTreeOffsetParent: css`
       label: SpanTreeOffsetParent;
       &:hover {
-        background-color: ${autoColor(theme, '#e8e8e8')};
         cursor: pointer;
       }
     `,
@@ -43,7 +42,7 @@ export const getStyles = createStyle((theme: Theme) => {
       /* The size of the indentGuide is based off of the iconWrapper */
       padding-right: calc(0.5rem + 12px);
       height: 100%;
-      border-left: 1px solid transparent;
+      border-left: 3px solid transparent;
       display: inline-flex;
       &::before {
         content: '';
@@ -53,12 +52,9 @@ export const getStyles = createStyle((theme: Theme) => {
     `,
     indentGuideActive: css`
       label: indentGuideActive;
-      padding-right: calc(0.5rem + 11px);
-      border-left: 0px;
+      border-color: ${autoColor(theme, 'darkgrey')};
       &::before {
-        content: '';
-        padding-left: 3px;
-        background-color: ${autoColor(theme, 'darkgrey')};
+        background-color: transparent;
       }
     `,
     iconWrapper: css`
@@ -72,7 +68,7 @@ export const getStyles = createStyle((theme: Theme) => {
 type TProps = {
   childrenVisible?: boolean;
   onClick?: () => void;
-  span: Span;
+  span: TraceSpan;
   showChildrenIcon?: boolean;
 
   hoverIndentGuideIds: Set<string>;
@@ -144,7 +140,7 @@ export class UnthemedSpanTreeOffset extends React.PureComponent<TProps> {
     const styles = getStyles(theme);
     return (
       <span className={cx(styles.SpanTreeOffset, { [styles.SpanTreeOffsetParent]: hasChildren })} {...wrapperProps}>
-        {this.ancestorIds.map(ancestorId => (
+        {this.ancestorIds.map((ancestorId) => (
           <span
             key={ancestorId}
             className={cx(styles.indentGuide, {
@@ -152,15 +148,15 @@ export class UnthemedSpanTreeOffset extends React.PureComponent<TProps> {
             })}
             data-ancestor-id={ancestorId}
             data-test-id="SpanTreeOffset--indentGuide"
-            onMouseEnter={event => this.handleMouseEnter(event, ancestorId)}
-            onMouseLeave={event => this.handleMouseLeave(event, ancestorId)}
+            onMouseEnter={(event) => this.handleMouseEnter(event, ancestorId)}
+            onMouseLeave={(event) => this.handleMouseLeave(event, ancestorId)}
           />
         ))}
         {icon && (
           <span
             className={styles.iconWrapper}
-            onMouseEnter={event => this.handleMouseEnter(event, spanID)}
-            onMouseLeave={event => this.handleMouseLeave(event, spanID)}
+            onMouseEnter={(event) => this.handleMouseEnter(event, spanID)}
+            onMouseLeave={(event) => this.handleMouseLeave(event, spanID)}
             data-test-id="icon-wrapper"
           >
             {icon}

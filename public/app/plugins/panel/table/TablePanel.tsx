@@ -1,13 +1,16 @@
 import React, { Component } from 'react';
 
-import { Table, Select } from '@grafana/ui';
-import { FieldMatcherID, PanelProps, DataFrame, SelectableValue, getFrameDisplayName } from '@grafana/data';
-import { Options } from './types';
-import { css } from 'emotion';
+import { Select, Table } from '@grafana/ui';
+import { DataFrame, FieldMatcherID, getFrameDisplayName, PanelProps, SelectableValue } from '@grafana/data';
+import { PanelOptions } from './models.gen';
+import { css } from '@emotion/css';
 import { config } from 'app/core/config';
-import { TableSortByFieldState } from '@grafana/ui/src/components/Table/types';
+import { FilterItem, TableSortByFieldState } from '@grafana/ui/src/components/Table/types';
+import { dispatch } from '../../../store/store';
+import { applyFilterFromTable } from '../../../features/variables/adhoc/actions';
+import { getDashboardSrv } from '../../../features/dashboard/services/DashboardSrv';
 
-interface Props extends PanelProps<Options> {}
+interface Props extends PanelProps<PanelOptions> {}
 
 export class TablePanel extends Component<Props> {
   constructor(props: Props) {
@@ -22,11 +25,11 @@ export class TablePanel extends Component<Props> {
     const propId = 'custom.width';
 
     // look for existing override
-    const override = overrides.find(o => o.matcher.id === matcherId && o.matcher.options === fieldDisplayName);
+    const override = overrides.find((o) => o.matcher.id === matcherId && o.matcher.options === fieldDisplayName);
 
     if (override) {
       // look for existing property
-      const property = override.properties.find(prop => prop.id === propId);
+      const property = override.properties.find((prop) => prop.id === propId);
       if (property) {
         property.value = width;
       } else {
@@ -62,6 +65,18 @@ export class TablePanel extends Component<Props> {
     this.forceUpdate();
   };
 
+  onCellFilterAdded = (filter: FilterItem) => {
+    const { key, value, operator } = filter;
+    const panelModel = getDashboardSrv().getCurrent()?.getPanelById(this.props.id);
+    const datasource = panelModel?.datasource;
+
+    if (!datasource) {
+      return;
+    }
+
+    dispatch(applyFilterFromTable({ datasource, key, operator, value }));
+  };
+
   renderTable(frame: DataFrame, width: number, height: number) {
     const { options } = this.props;
 
@@ -75,6 +90,7 @@ export class TablePanel extends Component<Props> {
         initialSortBy={options.sortBy}
         onSortByChange={this.onSortByChange}
         onColumnResize={this.onColumnResize}
+        onCellFilterAdded={this.onCellFilterAdded}
       />
     );
   }
@@ -89,9 +105,10 @@ export class TablePanel extends Component<Props> {
     const { data, height, width } = this.props;
 
     const count = data.series?.length;
+    const hasFields = data.series[0]?.fields.length;
 
-    if (!count || count < 1) {
-      return <div>No data</div>;
+    if (!count || !hasFields) {
+      return <div className={tableStyles.noData}>No data</div>;
     }
 
     if (count > 1) {
@@ -124,6 +141,13 @@ const tableStyles = {
     display: flex;
     flex-direction: column;
     justify-content: space-between;
+    height: 100%;
+  `,
+  noData: css`
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
     height: 100%;
   `,
   selectWrapper: css`

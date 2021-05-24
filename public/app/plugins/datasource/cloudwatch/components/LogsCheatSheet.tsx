@@ -1,13 +1,11 @@
 import React, { PureComponent } from 'react';
 import { stripIndent, stripIndents } from 'common-tags';
-import { ExploreStartPageProps, ExploreMode } from '@grafana/data';
+import { QueryEditorHelpProps } from '@grafana/data';
 import Prism from 'prismjs';
 import tokenizer from '../syntax';
 import { flattenTokens } from '@grafana/ui/src/slate-plugins/slate-prism';
-import { css, cx } from 'emotion';
+import { css, cx } from '@emotion/css';
 import { CloudWatchLogsQuery } from '../types';
-import { changeModeAction } from 'app/features/explore/state/actionTypes';
-import { dispatch } from 'app/store/store';
 
 interface QueryExample {
   category: string;
@@ -194,10 +192,10 @@ const CLIQ_EXAMPLES: QueryExample[] = [
 ];
 
 function renderHighlightedMarkup(code: string, keyPrefix: string) {
-  const grammar = Prism.languages['cloudwatch'] ?? tokenizer;
+  const grammar = tokenizer;
   const tokens = flattenTokens(Prism.tokenize(code, grammar));
   const spans = tokens
-    .filter(token => typeof token !== 'string')
+    .filter((token) => typeof token !== 'string')
     .map((token, i) => {
       return (
         <span
@@ -216,26 +214,9 @@ const exampleCategory = css`
   margin-top: 5px;
 `;
 
-export default class LogsCheatSheet extends PureComponent<ExploreStartPageProps, { userExamples: string[] }> {
-  switchToMetrics = (query: CloudWatchLogsQuery) => {
-    const { onClickExample, exploreId } = this.props;
-
-    const nextQuery: CloudWatchLogsQuery = {
-      ...(query as CloudWatchLogsQuery),
-      apiMode: 'Logs',
-      queryMode: 'Logs',
-    };
-
-    dispatch(changeModeAction({ exploreId, mode: ExploreMode.Metrics }));
-    onClickExample(nextQuery);
-  };
-
+export default class LogsCheatSheet extends PureComponent<QueryEditorHelpProps, { userExamples: string[] }> {
   onClickExample(query: CloudWatchLogsQuery) {
-    if (query.expression.includes('stats')) {
-      this.switchToMetrics(query);
-    } else {
-      this.props.onClickExample(query);
-    }
+    this.props.onClickExample(query);
   }
 
   renderExpression(expr: string, keyPrefix: string) {
@@ -243,7 +224,9 @@ export default class LogsCheatSheet extends PureComponent<ExploreStartPageProps,
       <div
         className="cheat-sheet-item__example"
         key={expr}
-        onClick={e => this.onClickExample({ refId: 'A', expression: expr } as CloudWatchLogsQuery)}
+        onClick={(e) =>
+          this.onClickExample({ refId: 'A', expression: expr, queryMode: 'Logs', region: 'default', id: 'A' })
+        }
       >
         <pre>{renderHighlightedMarkup(expr, keyPrefix)}</pre>
       </div>
@@ -254,13 +237,13 @@ export default class LogsCheatSheet extends PureComponent<ExploreStartPageProps,
     return (
       <div>
         <h2>CloudWatch Logs Cheat Sheet</h2>
-        {CLIQ_EXAMPLES.map(cat => (
-          <div>
+        {CLIQ_EXAMPLES.map((cat, i) => (
+          <div key={`${cat.category}-${i}`}>
             <div className={`cheat-sheet-item__title ${cx(exampleCategory)}`}>{cat.category}</div>
-            {cat.examples.map((item, i) => (
-              <div className="cheat-sheet-item" key={`item-${i}`}>
+            {cat.examples.map((item, j) => (
+              <div className="cheat-sheet-item" key={`item-${j}`}>
                 <h4>{item.title}</h4>
-                {this.renderExpression(item.expr, `item-${i}`)}
+                {this.renderExpression(item.expr, `item-${j}`)}
               </div>
             ))}
           </div>
@@ -273,13 +256,13 @@ export default class LogsCheatSheet extends PureComponent<ExploreStartPageProps,
     return (
       <div>
         <h2>CloudWatch Logs Cheat Sheet</h2>
-        {CLIQ_EXAMPLES.map(cat => (
-          <div>
+        {CLIQ_EXAMPLES.map((cat, i) => (
+          <div key={`cat-${i}`}>
             <div className={`cheat-sheet-item__title ${cx(exampleCategory)}`}>{cat.category}</div>
-            {cat.examples.map((item, i) => (
-              <div className="cheat-sheet-item" key={`item-${i}`}>
+            {cat.examples.map((item, j) => (
+              <div className="cheat-sheet-item" key={`item-${j}`}>
                 <h4>{item.title}</h4>
-                {this.renderExpression(item.expr, `item-${i}`)}
+                {this.renderExpression(item.expr, `item-${j}`)}
               </div>
             ))}
           </div>

@@ -1,18 +1,19 @@
 // Libraries
 import $ from 'jquery';
 import React, { PureComponent } from 'react';
-import uniqBy from 'lodash/uniqBy';
+import { uniqBy } from 'lodash';
 // Types
 import { TimeRange, GraphSeriesXY, TimeZone, createDimension } from '@grafana/data';
-import _ from 'lodash';
 import { FlotPosition, FlotItem } from './types';
-import { TooltipProps, TooltipContentProps, ActiveDimensions, Tooltip } from '../Chart/Tooltip';
+import { VizTooltipProps, VizTooltipContentProps, ActiveDimensions, VizTooltip } from '../VizTooltip';
 import { GraphTooltip } from './GraphTooltip/GraphTooltip';
 import { GraphContextMenu, GraphContextMenuProps, ContextDimensions } from './GraphContextMenu';
 import { GraphDimensions } from './GraphTooltip/types';
 import { graphTimeFormat, graphTickFormatter } from './utils';
+import { TooltipDisplayMode } from '../VizTooltip/models.gen';
 
 export interface GraphProps {
+  ariaLabel?: string;
   children?: JSX.Element | JSX.Element[];
   series: GraphSeriesXY[];
   timeRange: TimeRange; // NOTE: we should aim to make `time` a property of the axis, not force it for all graphs
@@ -70,7 +71,9 @@ export class Graph extends PureComponent<GraphProps, GraphState> {
   }
 
   componentWillUnmount() {
-    this.$element.unbind('plotselected', this.onPlotSelected);
+    if (this.$element) {
+      this.$element.unbind('plotselected', this.onPlotSelected);
+    }
   }
 
   onPlotSelected = (event: JQueryEventObject, ranges: { xaxis: { from: number; to: number } }) => {
@@ -102,7 +105,7 @@ export class Graph extends PureComponent<GraphProps, GraphState> {
       return [{ show: true, min: -1, max: 1 }];
     }
     return uniqBy(
-      series.map(s => {
+      series.map((s) => {
         const index = s.yAxis ? s.yAxis.index : 1;
         const min = s.yAxis && !isNaN(s.yAxis.min as number) ? s.yAxis.min : null;
         const tickDecimals = s.yAxis && !isNaN(s.yAxis.tickDecimals as number) ? s.yAxis.tickDecimals : null;
@@ -114,21 +117,21 @@ export class Graph extends PureComponent<GraphProps, GraphState> {
           tickDecimals,
         };
       }),
-      yAxisConfig => yAxisConfig.index
+      (yAxisConfig) => yAxisConfig.index
     );
   }
 
   renderTooltip = () => {
     const { children, series, timeZone } = this.props;
     const { pos, activeItem, isTooltipVisible } = this.state;
-    let tooltipElement: React.ReactElement<TooltipProps> | null = null;
+    let tooltipElement: React.ReactElement<VizTooltipProps> | null = null;
 
     if (!isTooltipVisible || !pos || series.length === 0) {
       return null;
     }
 
     // Find children that indicate tooltip to be rendered
-    React.Children.forEach(children, c => {
+    React.Children.forEach(children, (c) => {
       // We have already found tooltip
       if (tooltipElement) {
         return;
@@ -136,15 +139,15 @@ export class Graph extends PureComponent<GraphProps, GraphState> {
       // @ts-ignore
       const childType = c && c.type && (c.type.displayName || c.type.name);
 
-      if (childType === Tooltip.displayName) {
-        tooltipElement = c as React.ReactElement<TooltipProps>;
+      if (childType === VizTooltip.displayName) {
+        tooltipElement = c as React.ReactElement<VizTooltipProps>;
       }
     });
     // If no tooltip provided, skip rendering
     if (!tooltipElement) {
       return null;
     }
-    const tooltipElementProps = (tooltipElement as React.ReactElement<TooltipProps>).props;
+    const tooltipElementProps = (tooltipElement as React.ReactElement<VizTooltipProps>).props;
 
     const tooltipMode = tooltipElementProps.mode || 'single';
 
@@ -169,27 +172,27 @@ export class Graph extends PureComponent<GraphProps, GraphState> {
       yAxis: activeItem ? [activeItem.series.seriesIndex, activeItem.dataIndex] : null,
     };
 
-    const tooltipContentProps: TooltipContentProps<GraphDimensions> = {
+    const tooltipContentProps: VizTooltipContentProps<GraphDimensions> = {
       dimensions: {
         // time/value dimension columns are index-aligned - see getGraphSeriesModel
         xAxis: createDimension(
           'xAxis',
-          series.map(s => s.timeField)
+          series.map((s) => s.timeField)
         ),
         yAxis: createDimension(
           'yAxis',
-          series.map(s => s.valueField)
+          series.map((s) => s.valueField)
         ),
       },
       activeDimensions,
       pos,
-      mode: tooltipElementProps.mode || 'single',
+      mode: tooltipElementProps.mode || TooltipDisplayMode.Single,
       timeZone,
     };
 
     const tooltipContent = React.createElement(tooltipContentRenderer, { ...tooltipContentProps });
 
-    return React.cloneElement<TooltipProps>(tooltipElement as React.ReactElement<TooltipProps>, {
+    return React.cloneElement<VizTooltipProps>(tooltipElement as React.ReactElement<VizTooltipProps>, {
       content: tooltipContent,
       position: { x: pos.pageX, y: pos.pageY },
       offset: { x: 10, y: 10 },
@@ -220,11 +223,11 @@ export class Graph extends PureComponent<GraphProps, GraphState> {
       // time/value dimension columns are index-aligned - see getGraphSeriesModel
       xAxis: createDimension(
         'xAxis',
-        series.map(s => s.timeField)
+        series.map((s) => s.timeField)
       ),
       yAxis: createDimension(
         'yAxis',
-        series.map(s => s.valueField)
+        series.map((s) => s.valueField)
       ),
     };
 
@@ -256,7 +259,7 @@ export class Graph extends PureComponent<GraphProps, GraphState> {
 
   getBarWidth = () => {
     const { series } = this.props;
-    return Math.min(...series.map(s => s.timeStep));
+    return Math.min(...series.map((s) => s.timeStep));
   };
 
   draw() {
@@ -349,25 +352,25 @@ export class Graph extends PureComponent<GraphProps, GraphState> {
     try {
       $.plot(
         this.element,
-        series.filter(s => s.isVisible),
+        series.filter((s) => s.isVisible),
         flotOptions
       );
     } catch (err) {
-      console.log('Graph rendering error', err, flotOptions, series);
+      console.error('Graph rendering error', err, flotOptions, series);
       throw new Error('Error rendering panel');
     }
   }
 
   render() {
-    const { height, width, series } = this.props;
+    const { ariaLabel, height, width, series } = this.props;
     const noDataToBeDisplayed = series.length === 0;
     const tooltip = this.renderTooltip();
     const context = this.renderContextMenu();
     return (
-      <div className="graph-panel">
+      <div className="graph-panel" aria-label={ariaLabel}>
         <div
           className="graph-panel__chart"
-          ref={e => (this.element = e)}
+          ref={(e) => (this.element = e)}
           style={{ height, width }}
           onMouseLeave={() => {
             this.setState({ isTooltipVisible: false });

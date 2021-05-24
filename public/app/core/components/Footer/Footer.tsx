@@ -38,6 +38,11 @@ export let getVersionLinks = (): FooterLink[] => {
   const stateInfo = licenseInfo.stateInfo ? ` (${licenseInfo.stateInfo})` : '';
 
   links.push({ text: `${buildInfo.edition}${stateInfo}`, url: licenseInfo.licenseUrl });
+
+  if (buildInfo.hideVersion) {
+    return links;
+  }
+
   links.push({ text: `v${buildInfo.version} (${buildInfo.commit})` });
 
   if (buildInfo.hasUpdate) {
@@ -67,10 +72,10 @@ export const Footer: FC = React.memo(() => {
     <footer className="footer">
       <div className="text-center">
         <ul>
-          {links.map(link => (
+          {links.map((link) => (
             <li key={link.text}>
               <a href={link.url} target={link.target} rel="noopener">
-                <Icon name={link.icon as IconName} /> {link.text}
+                {link.icon && <Icon name={link.icon as IconName} />} {link.text}
               </a>
             </li>
           ))}
@@ -79,3 +84,5 @@ export const Footer: FC = React.memo(() => {
     </footer>
   );
 });
+
+Footer.displayName = 'Footer';

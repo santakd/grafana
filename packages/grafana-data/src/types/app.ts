@@ -6,18 +6,33 @@ import { PluginMeta, GrafanaPlugin, PluginIncludeType } from './plugin';
 export enum CoreApp {
   Dashboard = 'dashboard',
   Explore = 'explore',
+  Unknown = 'unknown',
+  CloudAlerting = 'cloud-alerting',
 }
 
 export interface AppRootProps<T = KeyValue> {
   meta: AppPluginMeta<T>;
-
-  path: string; // The URL path to this page
-  query: KeyValue; // The URL query parameters
+  /**
+   * base URL segment for an app, /app/pluginId
+   */
+  basename: string; // The URL path to this page
 
   /**
    * Pass the nav model to the container... is there a better way?
    */
   onNavChanged: (nav: NavModel) => void;
+
+  /**
+   * The URL query parameters
+   * @deprecated Use react-router instead
+   */
+  query: KeyValue;
+
+  /**
+   * The URL path to this page
+   * @deprecated Use react-router instead
+   */
+  path: string;
 }
 
 export interface AppPluginMeta<T = KeyValue> extends PluginMeta<T> {
@@ -42,6 +57,10 @@ export class AppPlugin<T = KeyValue> extends GrafanaPlugin<AppPluginMeta<T>> {
   /**
    * Set the component displayed under:
    *   /a/${plugin-id}/*
+   *
+   * If the NavModel is configured, the page will have a managed frame, otheriwse it has full control.
+   *
+   * NOTE: this structure will change in 7.2+ so that it is managed with a normal react router
    */
   setRootPage(root: ComponentClass<AppRootProps<T>>, rootNav?: NavModel) {
     this.root = root;

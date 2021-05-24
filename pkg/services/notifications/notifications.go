@@ -56,14 +56,14 @@ func (ns *NotificationService) Init() error {
 		"Subject": subjectTemplateFunc,
 	})
 
-	templatePattern := filepath.Join(setting.StaticRootPath, ns.Cfg.Smtp.TemplatesPattern)
+	templatePattern := filepath.Join(ns.Cfg.StaticRootPath, ns.Cfg.Smtp.TemplatesPattern)
 	_, err := mailTemplates.ParseGlob(templatePattern)
 	if err != nil {
 		return err
 	}
 
 	if !util.IsEmail(ns.Cfg.Smtp.FromAddress) {
-		return errors.New("Invalid email address for SMTP from_address config")
+		return errors.New("invalid email address for SMTP from_address config")
 	}
 
 	if setting.EmailCodeValidMinutes == 0 {
@@ -83,7 +83,7 @@ func (ns *NotificationService) Run(ctx context.Context) error {
 				ns.log.Error("Failed to send webrequest ", "error", err)
 			}
 		case msg := <-ns.mailQueue:
-			num, err := ns.send(msg)
+			num, err := ns.Send(msg)
 			tos := strings.Join(msg.To, "; ")
 			info := ""
 			if err != nil {
@@ -119,20 +119,21 @@ func subjectTemplateFunc(obj map[string]interface{}, value string) string {
 
 func (ns *NotificationService) sendEmailCommandHandlerSync(ctx context.Context, cmd *models.SendEmailCommandSync) error {
 	message, err := ns.buildEmailMessage(&models.SendEmailCommand{
-		Data:         cmd.Data,
-		Info:         cmd.Info,
-		Template:     cmd.Template,
-		To:           cmd.To,
-		SingleEmail:  cmd.SingleEmail,
-		EmbededFiles: cmd.EmbededFiles,
-		Subject:      cmd.Subject,
+		Data:          cmd.Data,
+		Info:          cmd.Info,
+		Template:      cmd.Template,
+		To:            cmd.To,
+		SingleEmail:   cmd.SingleEmail,
+		EmbeddedFiles: cmd.EmbeddedFiles,
+		Subject:       cmd.Subject,
+		ReplyTo:       cmd.ReplyTo,
 	})
 
 	if err != nil {
 		return err
 	}
 
-	_, err = ns.send(message)
+	_, err = ns.Send(message)
 	return err
 }
 

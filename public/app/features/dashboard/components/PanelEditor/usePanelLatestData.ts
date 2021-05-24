@@ -1,32 +1,67 @@
-import { PanelData } from '@grafana/data';
+import { DataQueryError, LoadingState, PanelData } from '@grafana/data';
 import { useEffect, useRef, useState } from 'react';
 import { PanelModel } from '../../state';
 import { Unsubscribable } from 'rxjs';
-import { GetDataOptions } from '../../state/PanelQueryRunner';
+import { GetDataOptions } from '../../../query/state/PanelQueryRunner';
 
-export const usePanelLatestData = (panel: PanelModel, options: GetDataOptions): [PanelData | null, boolean] => {
-  const querySubscription = useRef<Unsubscribable>(null);
-  const [latestData, setLatestData] = useState<PanelData>(null);
+interface UsePanelLatestData {
+  data?: PanelData;
+  error?: DataQueryError;
+  isLoading: boolean;
+  hasSeries: boolean;
+}
+
+/**
+ * Subscribes and returns latest panel data from PanelQueryRunner
+ */
+export const usePanelLatestData = (
+  panel: PanelModel,
+  options: GetDataOptions,
+  checkSchema?: boolean
+): UsePanelLatestData => {
+  const querySubscription = useRef<Unsubscribable>();
+  const [latestData, setLatestData] = useState<PanelData>();
 
   useEffect(() => {
+    let lastRev = -1;
+    let lastUpdate = 0;
+
     querySubscription.current = panel
       .getQueryRunner()
       .getData(options)
       .subscribe({
-        next: data => setLatestData(data),
+        next: (data) => {
+          if (checkSchema) {
+            if (lastRev === data.structureRev) {
+              const now = Date.now();
+              const elapsed = now - lastUpdate;
+              if (elapsed < 10000) {
+                return; // avoid updates if the schema has not changed for 10s
+              }
+              lastUpdate = now;
+            }
+            lastRev = data.structureRev ?? -1;
+          }
+          setLatestData(data);
+        },
       });
 
     return () => {
       if (querySubscription.current) {
-        console.log('unsubscribing');
         querySubscription.current.unsubscribe();
       }
     };
-  }, [panel]);
+    /**
+     * Adding separate options to dependencies array to avoid additional hook for comparing previous options with current.
+     * Otherwise, passing different references to the same object might cause troubles.
+     */
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [panel, options.withFieldConfig, options.withTransforms]);
 
-  return [
-    latestData,
-    // TODO: make this more clever, use PanelData.state
-    !!(latestData && latestData.series),
-  ];
+  return {
+    data: latestData,
+    error: latestData && latestData.error,
+    isLoading: latestData ? latestData.state === LoadingState.Loading : true,
+    hasSeries: latestData ? !!latestData.series : false,
+  };
 };

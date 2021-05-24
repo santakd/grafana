@@ -13,7 +13,7 @@
 // limitations under the License.
 
 import * as React from 'react';
-import { css } from 'emotion';
+import { css } from '@emotion/css';
 import cx from 'classnames';
 import IoIosArrowDown from 'react-icons/lib/io/ios-arrow-down';
 import IoIosArrowRight from 'react-icons/lib/io/ios-arrow-right';
@@ -40,17 +40,31 @@ const getStyles = createStyle((theme: Theme) => {
 
 type AccordianTextProps = {
   className?: string | TNil;
-  data: string[];
   headerClassName?: string | TNil;
+  data: string[];
   highContrast?: boolean;
   interactive?: boolean;
   isOpen: boolean;
-  label: React.ReactNode;
+  label: React.ReactNode | string;
   onToggle?: null | (() => void);
+  TextComponent?: React.ElementType<{ data: string[] }>;
 };
 
+function DefaultTextComponent({ data }: { data: string[] }) {
+  return <TextList data={data} />;
+}
+
 export default function AccordianText(props: AccordianTextProps) {
-  const { className, data, headerClassName, interactive, isOpen, label, onToggle } = props;
+  const {
+    className,
+    data,
+    headerClassName,
+    interactive,
+    isOpen,
+    label,
+    onToggle,
+    TextComponent = DefaultTextComponent,
+  } = props;
   const isEmpty = !Array.isArray(data) || !data.length;
   const accordianKeyValuesStyles = getAccordianKeyValuesStyles(useTheme());
   const iconCls = cx(uAlignIcon, { [accordianKeyValuesStyles.emptyIcon]: isEmpty });
@@ -68,9 +82,10 @@ export default function AccordianText(props: AccordianTextProps) {
   return (
     <div className={className || ''}>
       <div className={cx(styles.header, headerClassName)} {...headerProps} data-test-id="AccordianText--header">
-        {arrow} <strong>{label}</strong> ({data.length})
+        {arrow}
+        <strong>{label}</strong> ({data.length})
       </div>
-      {isOpen && <TextList data={data} />}
+      {isOpen && <TextComponent data={data} />}
     </div>
   );
 }

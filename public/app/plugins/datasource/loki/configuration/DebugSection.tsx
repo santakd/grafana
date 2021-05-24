@@ -1,14 +1,14 @@
 import React, { useState } from 'react';
-import { css } from 'emotion';
+import { css } from '@emotion/css';
 import cx from 'classnames';
 import { LegacyForms } from '@grafana/ui';
 const { FormField } = LegacyForms;
 import { DerivedFieldConfig } from '../types';
-import { getLinksFromLogsField } from '../../../../features/panel/panellinks/linkSuppliers';
 import { ArrayVector, Field, FieldType, LinkModel } from '@grafana/data';
+import { getFieldLinksForExplore } from '../../../../features/explore/utils/links';
 
 type Props = {
-  derivedFields: DerivedFieldConfig[];
+  derivedFields?: DerivedFieldConfig[];
   className?: string;
 };
 export const DebugSection = (props: Props) => {
@@ -35,7 +35,7 @@ export const DebugSection = (props: Props) => {
               `
             )}
             value={debugText}
-            onChange={event => setDebugText(event.currentTarget.value)}
+            onChange={(event) => setDebugText(event.currentTarget.value)}
           />
         }
       />
@@ -58,7 +58,7 @@ const DebugFields = ({ fields }: DebugFieldItemProps) => {
         </tr>
       </thead>
       <tbody>
-        {fields.map(field => {
+        {fields.map((field) => {
           let value: any = field.value;
           if (field.error) {
             value = field.error.message;
@@ -84,18 +84,19 @@ type DebugField = {
   value?: string;
   href?: string;
 };
+
 function makeDebugFields(derivedFields: DerivedFieldConfig[], debugText: string): DebugField[] {
   return derivedFields
-    .filter(field => field.name && field.matcherRegex)
-    .map(field => {
+    .filter((field) => field.name && field.matcherRegex)
+    .map((field) => {
       try {
         const testMatch = debugText.match(field.matcherRegex);
         const value = testMatch && testMatch[1];
-        let link: LinkModel<Field>;
+        let link: LinkModel<Field> | null = null;
 
         if (field.url && value) {
-          link = getLinksFromLogsField(
-            {
+          link = getFieldLinksForExplore({
+            field: {
               name: '',
               type: FieldType.string,
               values: new ArrayVector([value]),
@@ -103,8 +104,9 @@ function makeDebugFields(derivedFields: DerivedFieldConfig[], debugText: string)
                 links: [{ title: '', url: field.url }],
               },
             },
-            0
-          )[0].linkModel;
+            rowIndex: 0,
+            range: {} as any,
+          })[0];
         }
 
         return {

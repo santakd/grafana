@@ -1,6 +1,6 @@
 import React from 'react';
 import { boolean, number } from '@storybook/addon-knobs';
-import { css, cx } from 'emotion';
+import { css, cx } from '@emotion/css';
 import { RenderFunction } from '../../types';
 
 const StoryContainer: React.FC<{ width?: number; height?: number; showBoundaries: boolean }> = ({
@@ -47,7 +47,7 @@ export const withStoryContainer = (story: RenderFunction) => {
   const CONTAINER_GROUP = 'Container options';
   // ---
   const containerBoundary = boolean('Show container boundary', false, CONTAINER_GROUP);
-  const fullWidthContainter = boolean('Full width container', false, CONTAINER_GROUP);
+  const fullWidthContainer = boolean('Full width container', false, CONTAINER_GROUP);
   const containerWidth = number(
     'Container width',
     300,
@@ -72,7 +72,7 @@ export const withStoryContainer = (story: RenderFunction) => {
   );
   return (
     <StoryContainer
-      width={fullWidthContainter ? undefined : containerWidth}
+      width={fullWidthContainer ? undefined : containerWidth}
       height={containerHeight}
       showBoundaries={containerBoundary}
     >

@@ -428,6 +428,18 @@
             {
               "text": "Bitcoin (฿)",
               "value": "currencyBTC"
+            },
+            {
+              "text": "Milli Bitcoin (mBTC)",
+              "value": "currencymBTC"
+            },
+            {
+              "text": "Micro Bitcoin (μBTC)",
+              "value": "currencyμBTC"
+            },
+            {
+              "text": "Vietnamese Dong (VND)",
+              "value": "currencyVND"
             }
           ],
           "text": "currency"
@@ -674,6 +686,10 @@
               "value": "lengthm"
             },
             {
+              "text": "inch (in)",
+              "value": "lengthin"
+            },
+            {
               "text": "feet (ft)",
               "value": "lengthft"
             },
@@ -714,6 +730,10 @@
             {
               "text": "gram (g)",
               "value": "massg"
+            },
+            {
+              "text": "pound (lb)",
+              "value": "masslb"
             },
             {
               "text": "kilogram (kg)",
@@ -1527,6 +1547,10 @@
             {
               "text": "Bitcoin (฿)",
               "value": "currencyBTC"
+            },
+            {
+              "text": "Vietnamese Dong (VND)",
+              "value": "currencyVND"
             }
           ],
           "text": "currency"
@@ -1773,6 +1797,10 @@
               "value": "lengthm"
             },
             {
+              "text": "inch (in)",
+              "value": "lengthin"
+            },
+            {
               "text": "feet (ft)",
               "value": "lengthft"
             },
@@ -1813,6 +1841,10 @@
             {
               "text": "gram (g)",
               "value": "massg"
+            },
+            {
+              "text": "pound (lb)",
+              "value": "masslb"
             },
             {
               "text": "kilogram (kg)",
@@ -2606,6 +2638,10 @@
             {
               "text": "Bitcoin (฿)",
               "value": "currencyBTC"
+            },
+            {
+              "text": "Vietnamese Dong (VND)",
+              "value": "currencyVND"
             }
           ],
           "text": "currency"
@@ -2852,6 +2888,10 @@
               "value": "lengthm"
             },
             {
+              "text": "inch (in)",
+              "value": "lengthin"
+            },
+            {
               "text": "feet (ft)",
               "value": "lengthft"
             },
@@ -2892,6 +2932,10 @@
             {
               "text": "gram (g)",
               "value": "massg"
+            },
+            {
+              "text": "pound (lb)",
+              "value": "masslb"
             },
             {
               "text": "kilogram (kg)",

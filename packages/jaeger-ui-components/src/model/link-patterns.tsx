@@ -12,12 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import _uniq from 'lodash/uniq';
+import { uniq as _uniq } from 'lodash';
 import memoize from 'lru-memoize';
 import { getConfigValue } from '../utils/config/get-config';
 import { getParent } from './span';
 import { TNil } from '../types';
-import { Span, Link, KeyValuePair, Trace } from '..';
+import { TraceSpan, TraceLink, TraceKeyValuePair, Trace } from '../types/trace';
 
 const parameterRegExp = /#\{([^{}]*)\}/g;
 
@@ -118,15 +118,15 @@ export function processLinkPattern(pattern: any): ProcessedLinkPattern | TNil {
   }
 }
 
-export function getParameterInArray(name: string, array: KeyValuePair[]) {
+export function getParameterInArray(name: string, array: TraceKeyValuePair[]) {
   if (array) {
-    return array.find(entry => entry.key === name);
+    return array.find((entry) => entry.key === name);
   }
   return undefined;
 }
 
-export function getParameterInAncestor(name: string, span: Span) {
-  let currentSpan: Span | TNil = span;
+export function getParameterInAncestor(name: string, span: TraceSpan) {
+  let currentSpan: TraceSpan | TNil = span;
   while (currentSpan) {
     const result = getParameterInArray(name, currentSpan.tags) || getParameterInArray(name, currentSpan.process.tags);
     if (result) {
@@ -144,14 +144,14 @@ function callTemplate(template: ProcessedTemplate, data: any) {
 export function computeTraceLink(linkPatterns: ProcessedLinkPattern[], trace: Trace) {
   const result: TLinksRV = [];
   const validKeys = (Object.keys(trace) as Array<keyof Trace>).filter(
-    key => typeof trace[key] === 'string' || trace[key] === 'number'
+    (key) => typeof trace[key] === 'string' || trace[key] === 'number'
   );
 
   linkPatterns
-    .filter(pattern => pattern.type('traces'))
-    .forEach(pattern => {
+    .filter((pattern) => pattern.type('traces'))
+    .forEach((pattern) => {
       const parameterValues: Record<string, any> = {};
-      const allParameters = pattern.parameters.every(parameter => {
+      const allParameters = pattern.parameters.every((parameter) => {
         const key = parameter as keyof Trace;
         if (validKeys.includes(key)) {
           // At this point is safe to access to trace object using parameter variable because
@@ -174,8 +174,8 @@ export function computeTraceLink(linkPatterns: ProcessedLinkPattern[], trace: Tr
 
 export function computeLinks(
   linkPatterns: ProcessedLinkPattern[],
-  span: Span,
-  items: KeyValuePair[],
+  span: TraceSpan,
+  items: TraceKeyValuePair[],
   itemIndex: number
 ) {
   const item = items[itemIndex];
@@ -189,10 +189,10 @@ export function computeLinks(
     type = 'tags';
   }
   const result: Array<{ url: string; text: string }> = [];
-  linkPatterns.forEach(pattern => {
+  linkPatterns.forEach((pattern) => {
     if (pattern.type(type) && pattern.key(item.key) && pattern.value(item.value)) {
       const parameterValues: Record<string, any> = {};
-      const allParameters = pattern.parameters.every(parameter => {
+      const allParameters = pattern.parameters.every((parameter) => {
         let entry = getParameterInArray(parameter, items);
         if (!entry && !processTags) {
           // do not look in ancestors for process tags because the same object may appear in different places in the hierarchy
@@ -221,8 +221,8 @@ export function computeLinks(
   return result;
 }
 
-export function createGetLinks(linkPatterns: ProcessedLinkPattern[], cache: WeakMap<KeyValuePair, Link[]>) {
-  return (span: Span, items: KeyValuePair[], itemIndex: number) => {
+export function createGetLinks(linkPatterns: ProcessedLinkPattern[], cache: WeakMap<TraceKeyValuePair, TraceLink[]>) {
+  return (span: TraceSpan, items: TraceKeyValuePair[], itemIndex: number) => {
     if (linkPatterns.length === 0) {
       return [];
     }

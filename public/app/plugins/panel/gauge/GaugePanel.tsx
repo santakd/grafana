@@ -5,23 +5,25 @@ import { DataLinksContextMenuApi } from '@grafana/ui/src/components/DataLinks/Da
 
 import { config } from 'app/core/config';
 import { GaugeOptions } from './types';
+import { clearNameForSingleSeries } from '../bargauge/BarGaugePanel';
 
 export class GaugePanel extends PureComponent<PanelProps<GaugeOptions>> {
   renderComponent = (
     valueProps: VizRepeaterRenderValueProps<FieldDisplay>,
     menuProps: DataLinksContextMenuApi
   ): JSX.Element => {
-    const { options } = this.props;
-    const { value, width, height } = valueProps;
+    const { options, fieldConfig } = this.props;
+    const { width, height, count, value } = valueProps;
     const { field, display } = value;
     const { openMenu, targetClassName } = menuProps;
 
     return (
       <Gauge
-        value={display}
+        value={clearNameForSingleSeries(count, fieldConfig.defaults, display)}
         width={width}
         height={height}
         field={field}
+        text={options.text}
         showThresholdLabels={options.showThresholdLabels}
         showThresholdMarkers={options.showThresholdMarkers}
         theme={config.theme}
@@ -35,17 +37,17 @@ export class GaugePanel extends PureComponent<PanelProps<GaugeOptions>> {
     const { value } = valueProps;
     const { getLinks, hasLinks } = value;
 
-    if (!hasLinks) {
-      return this.renderComponent(valueProps, {});
+    if (hasLinks && getLinks) {
+      return (
+        <DataLinksContextMenu links={getLinks} config={value.field}>
+          {(api) => {
+            return this.renderComponent(valueProps, api);
+          }}
+        </DataLinksContextMenu>
+      );
     }
 
-    return (
-      <DataLinksContextMenu links={getLinks}>
-        {api => {
-          return this.renderComponent(valueProps, api);
-        }}
-      </DataLinksContextMenu>
-    );
+    return this.renderComponent(valueProps, {});
   };
 
   getValues = (): FieldDisplay[] => {
@@ -54,9 +56,8 @@ export class GaugePanel extends PureComponent<PanelProps<GaugeOptions>> {
       fieldConfig,
       reduceOptions: options.reduceOptions,
       replaceVariables,
-      theme: config.theme,
+      theme: config.theme2,
       data: data.series,
-      autoMinMax: true,
       timeZone,
     });
   };

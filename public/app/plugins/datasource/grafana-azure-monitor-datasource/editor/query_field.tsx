@@ -1,14 +1,13 @@
 import PluginPrism from 'app/features/explore/slate-plugins/prism';
 import { BracesPlugin, ClearPlugin, RunnerPlugin, NewlinePlugin } from '@grafana/ui';
 import Typeahead from './typeahead';
-import { getKeybindingSrv, KeybindingSrv } from 'app/core/services/keybindingSrv';
+import { keybindingSrv } from 'app/core/services/keybindingSrv';
 
 import { Block, Document, Text, Value, Editor as CoreEditor } from 'slate';
 import { Editor } from '@grafana/slate-react';
 import Plain from 'slate-plain-serializer';
 import ReactDOM from 'react-dom';
 import React from 'react';
-import _ from 'lodash';
 
 function flattenSuggestions(s: any) {
   return s ? s.reduce((acc: any, g: any) => acc.concat(g.items), []) : [];
@@ -54,7 +53,6 @@ class QueryField extends React.Component<any, any> {
   menuEl: any;
   plugins: any;
   resetTimer: any;
-  keybindingSrv: KeybindingSrv = getKeybindingSrv();
 
   constructor(props: any, context: any) {
     super(props, context);
@@ -101,13 +99,6 @@ class QueryField extends React.Component<any, any> {
         this.onChangeQuery();
       }
     });
-  };
-
-  request = (url?: string) => {
-    if (this.props.request) {
-      return this.props.request(url);
-    }
-    return fetch(url);
   };
 
   onChangeQuery = () => {
@@ -234,11 +225,11 @@ class QueryField extends React.Component<any, any> {
   };
 
   removeEscapeKeyBinding() {
-    this.keybindingSrv.unbind('esc', 'keydown');
+    keybindingSrv.unbind('esc', 'keydown');
   }
 
   restoreEscapeKeyBinding() {
-    this.keybindingSrv.setupGlobal();
+    keybindingSrv.initGlobals();
   }
 
   onClickItem = (item: any) => {
@@ -256,12 +247,13 @@ class QueryField extends React.Component<any, any> {
     const { suggestions } = this.state;
     const menu = this.menuEl;
     const selection = window.getSelection();
-    const node = selection.anchorNode;
 
     // No menu, nothing to do
-    if (!menu) {
+    if (!menu || !selection) {
       return;
     }
+
+    const node = selection.anchorNode;
 
     // No suggestions or blur, remove menu
     const hasSuggesstions = suggestions && suggestions.length > 0;
@@ -311,7 +303,7 @@ class QueryField extends React.Component<any, any> {
     const selectedKeys = (typeaheadIndex !== null && flattenedSuggestions.length > 0
       ? [flattenedSuggestions[selectedIndex]]
       : []
-    ).map(i => (typeof i === 'object' ? i.text : i));
+    ).map((i) => (typeof i === 'object' ? i.text : i));
 
     // Create typeahead in DOM root so we can later position it absolutely
     return (

@@ -1,6 +1,7 @@
 package notifiers
 
 import (
+	"strings"
 	"time"
 
 	"github.com/grafana/grafana/pkg/bus"
@@ -23,30 +24,24 @@ func init() {
 		Type:        "victorops",
 		Name:        "VictorOps",
 		Description: "Sends notifications to VictorOps",
+		Heading:     "VictorOps settings",
 		Factory:     NewVictoropsNotifier,
-		OptionsTemplate: `
-      <h3 class="page-heading">VictorOps settings</h3>
-      <div class="gf-form">
-        <span class="gf-form-label width-6">Url</span>
-        <input type="text" required class="gf-form-input max-width-30" ng-model="ctrl.model.settings.url" placeholder="VictorOps url"></input>
-      </div>
-      <div class="gf-form">
-        <span class="gf-form-label width-10">No Data Alert Type</span>
-        <div class="gf-form-select-wrapper width-14">
-          <select class="gf-form-input" ng-model="ctrl.model.settings.noDataAlertType" ng-options="t for t in ['CRITICAL', 'WARNING']" ng-init="ctrl.model.settings.noDataAlertType=ctrl.model.settings.noDataAlertType || '` + AlertStateWarning + `'">
-          </select>
-        </div>
-      </div>
-      <div class="gf-form">
-        <gf-form-switch
-           class="gf-form"
-           label="Auto resolve incidents"
-           label-class="width-14"
-           checked="ctrl.model.settings.autoResolve"
-           tooltip="Resolve incidents in VictorOps once the alert goes back to ok.">
-        </gf-form-switch>
-      </div>
-    `,
+		Options: []alerting.NotifierOption{
+			{
+				Label:        "Url",
+				Element:      alerting.ElementTypeInput,
+				InputType:    alerting.InputTypeText,
+				Placeholder:  "VictorOps url",
+				PropertyName: "url",
+				Required:     true,
+			},
+			{
+				Label:        "Auto resolve incidents",
+				Description:  "Resolve incidents in VictorOps once the alert goes back to ok.",
+				Element:      alerting.ElementTypeCheckbox,
+				PropertyName: "autoResolve",
+			},
+		},
 	})
 }
 
@@ -80,22 +75,35 @@ type VictoropsNotifier struct {
 	log             log.Logger
 }
 
-// Notify sends notification to Victorops via POST to URL endpoint
-func (vn *VictoropsNotifier) Notify(evalContext *alerting.EvalContext) error {
-	vn.log.Info("Executing victorops notification", "ruleId", evalContext.Rule.ID, "notification", vn.Name)
-
+func (vn *VictoropsNotifier) buildEventPayload(evalContext *alerting.EvalContext) (*simplejson.Json, error) {
 	ruleURL, err := evalContext.GetRuleURL()
 	if err != nil {
 		vn.log.Error("Failed get rule link", "error", err)
-		return err
+		return nil, err
 	}
 
 	if evalContext.Rule.State == models.AlertStateOK && !vn.AutoResolve {
 		vn.log.Info("Not alerting VictorOps", "state", evalContext.Rule.State, "auto resolve", vn.AutoResolve)
-		return nil
+		return nil, nil
 	}
 
 	messageType := AlertStateCritical // Default to alerting and change based on state checks (Ensures string type)
+	for _, tag := range evalContext.Rule.AlertRuleTags {
+		if strings.ToLower(tag.Key) == "severity" {
+			// Only set severity if it's one of the PD supported enum values
+			// Info, Warning, Error, or Critical (case insensitive)
+			switch sev := strings.ToUpper(tag.Value); sev {
+			case "INFO":
+				fallthrough
+			case "WARNING":
+				fallthrough
+			case "CRITICAL":
+				messageType = sev
+			default:
+				vn.log.Warn("Ignoring invalid severity tag", "severity", sev)
+			}
+		}
+	}
 
 	if evalContext.Rule.State == models.AlertStateNoData { // translate 'NODATA' to set alert
 		messageType = vn.NoDataAlertType
@@ -131,6 +139,18 @@ func (vn *VictoropsNotifier) Notify(evalContext *alerting.EvalContext) error {
 
 	if vn.NeedsImage() && evalContext.ImagePublicURL != "" {
 		bodyJSON.Set("image_url", evalContext.ImagePublicURL)
+	}
+
+	return bodyJSON, nil
+}
+
+// Notify sends notification to Victorops via POST to URL endpoint
+func (vn *VictoropsNotifier) Notify(evalContext *alerting.EvalContext) error {
+	vn.log.Info("Executing victorops notification", "ruleId", evalContext.Rule.ID, "notification", vn.Name)
+
+	bodyJSON, err := vn.buildEventPayload(evalContext)
+	if err != nil {
+		return err
 	}
 
 	data, _ := bodyJSON.MarshalJSON()

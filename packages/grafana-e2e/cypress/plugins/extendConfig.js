@@ -4,16 +4,18 @@ const {
 } = require('fs');
 const { resolve } = require('path');
 
-module.exports = async baseConfig => {
+// @todo use https://github.com/bahmutov/cypress-extends when possible
+module.exports = async (baseConfig) => {
   // From CLI
   const {
-    env: { CWD },
+    env: { CWD, UPDATE_SCREENSHOTS },
   } = baseConfig;
 
   if (CWD) {
     // @todo: https://github.com/cypress-io/cypress/issues/6406
     const jsonReporter = require.resolve('@mochajs/json-file-reporter');
 
+    // @todo `baseUrl: env.CYPRESS_BASEURL`
     const projectConfig = {
       fixturesFolder: `${CWD}/cypress/fixtures`,
       integrationFolder: `${CWD}/cypress/integration`,
@@ -21,13 +23,13 @@ module.exports = async baseConfig => {
       reporterOptions: {
         output: `${CWD}/cypress/report.json`,
       },
-      screenshotsFolder: `${CWD}/cypress/screenshots`,
+      screenshotsFolder: `${CWD}/cypress/screenshots/${UPDATE_SCREENSHOTS ? 'expected' : 'actual'}`,
       videosFolder: `${CWD}/cypress/videos`,
     };
 
     const customProjectConfig = await readFile(`${CWD}/cypress.json`, 'utf8')
       .then(JSON.parse)
-      .then(config => {
+      .then((config) => {
         const pathKeys = [
           'fileServerFolder',
           'fixturesFolder',
@@ -50,7 +52,7 @@ module.exports = async baseConfig => {
           })
         );
       })
-      .catch(error => {
+      .catch((error) => {
         if (error.code === 'ENOENT') {
           // File is optional
           return {};

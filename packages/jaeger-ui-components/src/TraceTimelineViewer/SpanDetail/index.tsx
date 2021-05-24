@@ -13,7 +13,7 @@
 // limitations under the License.
 
 import React from 'react';
-import { css } from 'emotion';
+import { css } from '@emotion/css';
 import cx from 'classnames';
 
 import AccordianKeyValues from './AccordianKeyValues';
@@ -25,11 +25,13 @@ import CopyIcon from '../../common/CopyIcon';
 import LabeledList from '../../common/LabeledList';
 
 import { TNil } from '../../types';
-import { KeyValuePair, Link, Log, Span } from '../../types/trace';
+import { TraceKeyValuePair, TraceLink, TraceLog, TraceSpan } from '../../types/trace';
 import AccordianReferences from './AccordianReferences';
 import { autoColor, createStyle, Theme, useTheme } from '../../Theme';
 import { UIDivider } from '../../uiElementsContext';
 import { ubFlex, ubFlexAuto, ubItemsCenter, ubM0, ubMb1, ubMy1, ubTxRightAlign } from '../../uberUtilityStyles';
+import { DataLinkButton, TextArea } from '@grafana/ui';
+import { CreateSpanLink } from '../types';
 
 const getStyles = createStyle((theme: Theme) => {
   return {
@@ -94,21 +96,27 @@ const getStyles = createStyle((theme: Theme) => {
       label: AccordianWarningsLabel;
       color: ${autoColor(theme, '#d36c08')};
     `,
+    Textarea: css`
+      word-break: break-all;
+      white-space: pre;
+    `,
   };
 });
 
 type SpanDetailProps = {
   detailState: DetailState;
-  linksGetter: ((links: KeyValuePair[], index: number) => Link[]) | TNil;
-  logItemToggle: (spanID: string, log: Log) => void;
+  linksGetter: ((links: TraceKeyValuePair[], index: number) => TraceLink[]) | TNil;
+  logItemToggle: (spanID: string, log: TraceLog) => void;
   logsToggle: (spanID: string) => void;
   processToggle: (spanID: string) => void;
-  span: Span;
+  span: TraceSpan;
   tagsToggle: (spanID: string) => void;
   traceStartTime: number;
   warningsToggle: (spanID: string) => void;
+  stackTracesToggle: (spanID: string) => void;
   referencesToggle: (spanID: string) => void;
   focusSpan: (uiFind: string) => void;
+  createSpanLink?: CreateSpanLink;
 };
 
 export default function SpanDetail(props: SpanDetailProps) {
@@ -122,11 +130,31 @@ export default function SpanDetail(props: SpanDetailProps) {
     tagsToggle,
     traceStartTime,
     warningsToggle,
+    stackTracesToggle,
     referencesToggle,
     focusSpan,
+    createSpanLink,
   } = props;
-  const { isTagsOpen, isProcessOpen, logs: logsState, isWarningsOpen, isReferencesOpen } = detailState;
-  const { operationName, process, duration, relativeStartTime, spanID, logs, tags, warnings, references } = span;
+  const {
+    isTagsOpen,
+    isProcessOpen,
+    logs: logsState,
+    isWarningsOpen,
+    isReferencesOpen,
+    isStackTracesOpen,
+  } = detailState;
+  const {
+    operationName,
+    process,
+    duration,
+    relativeStartTime,
+    spanID,
+    logs,
+    tags,
+    warnings,
+    references,
+    stackTraces,
+  } = span;
   const overviewItems = [
     {
       key: 'svc',
@@ -146,13 +174,17 @@ export default function SpanDetail(props: SpanDetailProps) {
   ];
   const deepLinkCopyText = `${window.location.origin}${window.location.pathname}?uiFind=${spanID}`;
   const styles = getStyles(useTheme());
+  const link = createSpanLink?.(span);
 
   return (
     <div>
-      <div className={cx(ubFlex, ubItemsCenter)}>
+      <div className={cx(ubFlex, ubItemsCenter, ubMb1)}>
         <h2 className={cx(ubFlexAuto, ubM0)}>{operationName}</h2>
         <LabeledList className={ubTxRightAlign} dividerClassName={styles.divider} items={overviewItems} />
       </div>
+      {link ? (
+        <DataLinkButton link={{ ...link, title: 'Logs for this span' } as any} buttonProps={{ icon: 'gf-logs' }} />
+      ) : null}
       <UIDivider className={cx(styles.divider, styles.dividerVertical, ubMy1)} />
       <div>
         <div>
@@ -181,7 +213,7 @@ export default function SpanDetail(props: SpanDetailProps) {
             isOpen={logsState.isOpen}
             openedItems={logsState.openedItems}
             onToggle={() => logsToggle(spanID)}
-            onItemToggle={logItem => logItemToggle(spanID, logItem)}
+            onItemToggle={(logItem) => logItemToggle(spanID, logItem)}
             timestamp={traceStartTime}
           />
         )}
@@ -193,6 +225,34 @@ export default function SpanDetail(props: SpanDetailProps) {
             data={warnings}
             isOpen={isWarningsOpen}
             onToggle={() => warningsToggle(spanID)}
+          />
+        )}
+        {stackTraces && stackTraces.length && (
+          <AccordianText
+            label="Stack trace"
+            data={stackTraces}
+            isOpen={isStackTracesOpen}
+            TextComponent={(textComponentProps) => {
+              let text;
+              if (textComponentProps.data?.length > 1) {
+                text = textComponentProps.data
+                  .map((stackTrace, index) => `StackTrace ${index + 1}:\n${stackTrace}`)
+                  .join('\n');
+              } else {
+                text = textComponentProps.data?.[0];
+              }
+              return (
+                <TextArea
+                  className={styles.Textarea}
+                  style={{ cursor: 'unset' }}
+                  readOnly
+                  cols={10}
+                  rows={10}
+                  value={text}
+                />
+              );
+            }}
+            onToggle={() => stackTracesToggle(spanID)}
           />
         )}
         {references && references.length > 1 && (

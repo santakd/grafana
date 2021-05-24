@@ -1,21 +1,20 @@
-import React from 'react';
-import { css } from 'emotion';
+import React, { useState, useEffect } from 'react';
+import { css } from '@emotion/css';
 import { uniqBy } from 'lodash';
 
 // Types
 import { RichHistoryQuery, ExploreId } from 'app/types/explore';
 
 // Utils
-import { stylesFactory, useTheme } from '@grafana/ui';
+import { stylesFactory, useTheme, Select } from '@grafana/ui';
 import { GrafanaTheme, SelectableValue } from '@grafana/data';
-
-import { SortOrder } from '../../../core/utils/explore';
-import { sortQueries, createDatasourcesList } from '../../../core/utils/richHistory';
+import { filterAndSortQueries, createDatasourcesList, SortOrder } from 'app/core/utils/richHistory';
 
 // Components
 import RichHistoryCard from './RichHistoryCard';
 import { sortOrderOptions } from './RichHistory';
-import { Select } from '@grafana/ui';
+import { FilterInput } from 'app/core/components/FilterInput/FilterInput';
+import { useDebounce } from 'react-use';
 
 export interface Props {
   queries: RichHistoryQuery[];
@@ -24,7 +23,7 @@ export interface Props {
   datasourceFilters: SelectableValue[] | null;
   exploreId: ExploreId;
   onChangeSortOrder: (sortOrder: SortOrder) => void;
-  onSelectDatasourceFilters: (value: SelectableValue[] | null) => void;
+  onSelectDatasourceFilters: (value: SelectableValue[]) => void;
 }
 
 const getStyles = stylesFactory((theme: GrafanaTheme) => {
@@ -39,14 +38,19 @@ const getStyles = stylesFactory((theme: GrafanaTheme) => {
     selectors: css`
       display: flex;
       justify-content: space-between;
+      flex-wrap: wrap;
     `,
     multiselect: css`
-      width: 60%;
+      width: 100%;
+      margin-bottom: ${theme.spacing.sm};
       .gf-form-select-box__multi-value {
         background-color: ${bgColor};
         padding: ${theme.spacing.xxs} ${theme.spacing.xs} ${theme.spacing.xxs} ${theme.spacing.sm};
         border-radius: ${theme.border.radius.sm};
       }
+    `,
+    filterInput: css`
+      margin-bottom: ${theme.spacing.sm};
     `,
     sort: css`
       width: 170px;
@@ -77,21 +81,35 @@ export function RichHistoryStarredTab(props: Props) {
     exploreId,
   } = props;
 
+  const [filteredQueries, setFilteredQueries] = useState<RichHistoryQuery[]>([]);
+  const [searchInput, setSearchInput] = useState('');
+  const [debouncedSearchInput, setDebouncedSearchInput] = useState('');
+
   const theme = useTheme();
   const styles = getStyles(theme);
 
-  const datasourcesRetrievedFromQueryHistory = uniqBy(queries, 'datasourceName').map(d => d.datasourceName);
+  const datasourcesRetrievedFromQueryHistory = uniqBy(queries, 'datasourceName').map((d) => d.datasourceName);
   const listOfDatasources = createDatasourcesList(datasourcesRetrievedFromQueryHistory);
 
-  const listOfDatasourceFilters = datasourceFilters?.map(d => d.value);
+  useDebounce(
+    () => {
+      setDebouncedSearchInput(searchInput);
+    },
+    300,
+    [searchInput]
+  );
 
-  const starredQueries = queries.filter(q => q.starred === true);
-  const starredQueriesFilteredByDatasource =
-    listOfDatasourceFilters && listOfDatasourceFilters?.length > 0
-      ? starredQueries?.filter(q => listOfDatasourceFilters?.includes(q.datasourceName))
-      : starredQueries;
-
-  const sortedStarredQueries = sortQueries(starredQueriesFilteredByDatasource, sortOrder);
+  useEffect(() => {
+    const starredQueries = queries.filter((q) => q.starred === true);
+    setFilteredQueries(
+      filterAndSortQueries(
+        starredQueries,
+        sortOrder,
+        datasourceFilters?.map((d) => d.value) as string[] | null,
+        debouncedSearchInput
+      )
+    );
+  }, [queries, sortOrder, datasourceFilters, debouncedSearchInput]);
 
   return (
     <div className={styles.container}>
@@ -108,17 +126,26 @@ export function RichHistoryStarredTab(props: Props) {
               />
             </div>
           )}
+          <div className={styles.filterInput}>
+            <FilterInput
+              placeholder="Search queries"
+              value={searchInput}
+              onChange={(value: string) => {
+                setSearchInput(value);
+              }}
+            />
+          </div>
           <div aria-label="Sort queries" className={styles.sort}>
             <Select
               options={sortOrderOptions}
-              value={sortOrderOptions.filter(order => order.value === sortOrder)}
+              value={sortOrderOptions.filter((order) => order.value === sortOrder)}
               placeholder="Sort queries by"
-              onChange={e => onChangeSortOrder(e.value as SortOrder)}
+              onChange={(e) => onChangeSortOrder(e.value as SortOrder)}
             />
           </div>
         </div>
-        {sortedStarredQueries.map(q => {
-          const idx = listOfDatasources.findIndex(d => d.label === q.datasourceName);
+        {filteredQueries.map((q) => {
+          const idx = listOfDatasources.findIndex((d) => d.label === q.datasourceName);
           return (
             <RichHistoryCard
               query={q}

@@ -1,43 +1,66 @@
-import React, { FC } from 'react';
-import { css, cx } from 'emotion';
-import { TableCellProps } from './types';
+import React from 'react';
+import { css, cx } from '@emotion/css';
+import { isString } from 'lodash';
 import { Tooltip } from '../Tooltip/Tooltip';
 import { JSONFormatter } from '../JSONFormatter/JSONFormatter';
+import { useStyles2 } from '../../themes';
+import { TableCellProps } from './types';
+import { GrafanaTheme2 } from '@grafana/data';
 
-export const JSONViewCell: FC<TableCellProps> = props => {
-  const { field, cell, tableStyles } = props;
-
-  if (!field.display) {
-    return null;
-  }
+export function JSONViewCell(props: TableCellProps): JSX.Element {
+  const { cell, tableStyles, cellProps } = props;
 
   const txt = css`
     cursor: pointer;
     font-family: monospace;
   `;
 
-  const displayValue = JSON.stringify(cell.value);
-  const content = <JSONTooltip value={cell.value} />;
+  let value = cell.value;
+  let displayValue = value;
+
+  if (isString(value)) {
+    try {
+      value = JSON.parse(value);
+    } catch {} // ignore errors
+  } else {
+    displayValue = JSON.stringify(value);
+  }
+
+  const content = <JSONTooltip value={value} />;
+
   return (
-    <div className={cx(txt, tableStyles.tableCell)}>
-      <Tooltip placement="auto" content={content} theme={'info'}>
-        <div className={tableStyles.overflow}>{displayValue}</div>
-      </Tooltip>
-    </div>
+    <Tooltip placement="auto-start" content={content} theme="info-alt">
+      <div {...cellProps} className={tableStyles.cellContainer}>
+        <div className={cx(tableStyles.cellText, txt)}>{displayValue}</div>
+      </div>
+    </Tooltip>
   );
-};
+}
 
 interface PopupProps {
   value: any;
 }
 
-const JSONTooltip: FC<PopupProps> = props => {
-  const clazz = css`
-    padding: 10px;
-  `;
+function JSONTooltip(props: PopupProps): JSX.Element {
+  const styles = useStyles2(getStyles);
   return (
-    <div className={clazz}>
-      <JSONFormatter json={props.value} open={4} />
+    <div className={styles.container}>
+      <div>
+        <JSONFormatter json={props.value} open={4} className={styles.json} />
+      </div>
     </div>
   );
-};
+}
+
+function getStyles(theme: GrafanaTheme2) {
+  return {
+    container: css`
+      padding: ${theme.spacing(0.5)};
+    `,
+    json: css`
+      max-width: fit-content;
+      max-height: 70vh;
+      overflow-y: auto;
+    `,
+  };
+}

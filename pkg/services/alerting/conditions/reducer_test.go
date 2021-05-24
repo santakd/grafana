@@ -7,12 +7,11 @@ import (
 	. "github.com/smartystreets/goconvey/convey"
 
 	"github.com/grafana/grafana/pkg/components/null"
-	"github.com/grafana/grafana/pkg/tsdb"
+	"github.com/grafana/grafana/pkg/plugins"
 )
 
 func TestSimpleReducer(t *testing.T) {
 	Convey("Test simple reducer by calculating", t, func() {
-
 		Convey("sum", func() {
 			result := testReducer("sum", 1, 2, 3)
 			So(result, ShouldEqual, float64(6))
@@ -55,16 +54,16 @@ func TestSimpleReducer(t *testing.T) {
 
 		Convey("median should ignore null values", func() {
 			reducer := newSimpleReducer("median")
-			series := &tsdb.TimeSeries{
+			series := plugins.DataTimeSeries{
 				Name: "test time series",
 			}
 
-			series.Points = append(series.Points, tsdb.NewTimePoint(null.FloatFromPtr(nil), 1))
-			series.Points = append(series.Points, tsdb.NewTimePoint(null.FloatFromPtr(nil), 2))
-			series.Points = append(series.Points, tsdb.NewTimePoint(null.FloatFromPtr(nil), 3))
-			series.Points = append(series.Points, tsdb.NewTimePoint(null.FloatFrom(float64(1)), 4))
-			series.Points = append(series.Points, tsdb.NewTimePoint(null.FloatFrom(float64(2)), 5))
-			series.Points = append(series.Points, tsdb.NewTimePoint(null.FloatFrom(float64(3)), 6))
+			series.Points = append(series.Points, plugins.DataTimePoint{null.FloatFromPtr(nil), null.FloatFrom(1)})
+			series.Points = append(series.Points, plugins.DataTimePoint{null.FloatFromPtr(nil), null.FloatFrom(2)})
+			series.Points = append(series.Points, plugins.DataTimePoint{null.FloatFromPtr(nil), null.FloatFrom(3)})
+			series.Points = append(series.Points, plugins.DataTimePoint{null.FloatFrom(float64(1)), null.FloatFrom(4)})
+			series.Points = append(series.Points, plugins.DataTimePoint{null.FloatFrom(float64(2)), null.FloatFrom(5)})
+			series.Points = append(series.Points, plugins.DataTimePoint{null.FloatFrom(float64(3)), null.FloatFrom(6)})
 
 			result := reducer.Reduce(series)
 			So(result.Valid, ShouldEqual, true)
@@ -78,25 +77,25 @@ func TestSimpleReducer(t *testing.T) {
 
 		Convey("avg with only nulls", func() {
 			reducer := newSimpleReducer("avg")
-			series := &tsdb.TimeSeries{
+			series := plugins.DataTimeSeries{
 				Name: "test time series",
 			}
 
-			series.Points = append(series.Points, tsdb.NewTimePoint(null.FloatFromPtr(nil), 1))
+			series.Points = append(series.Points, plugins.DataTimePoint{null.FloatFromPtr(nil), null.FloatFrom(1)})
 			So(reducer.Reduce(series).Valid, ShouldEqual, false)
 		})
 
 		Convey("count_non_null", func() {
 			Convey("with null values and real values", func() {
 				reducer := newSimpleReducer("count_non_null")
-				series := &tsdb.TimeSeries{
+				series := plugins.DataTimeSeries{
 					Name: "test time series",
 				}
 
-				series.Points = append(series.Points, tsdb.NewTimePoint(null.FloatFromPtr(nil), 1))
-				series.Points = append(series.Points, tsdb.NewTimePoint(null.FloatFromPtr(nil), 2))
-				series.Points = append(series.Points, tsdb.NewTimePoint(null.FloatFrom(3), 3))
-				series.Points = append(series.Points, tsdb.NewTimePoint(null.FloatFrom(3), 4))
+				series.Points = append(series.Points, plugins.DataTimePoint{null.FloatFromPtr(nil), null.FloatFrom(1)})
+				series.Points = append(series.Points, plugins.DataTimePoint{null.FloatFromPtr(nil), null.FloatFrom(2)})
+				series.Points = append(series.Points, plugins.DataTimePoint{null.FloatFrom(3), null.FloatFrom(3)})
+				series.Points = append(series.Points, plugins.DataTimePoint{null.FloatFrom(3), null.FloatFrom(4)})
 
 				So(reducer.Reduce(series).Valid, ShouldEqual, true)
 				So(reducer.Reduce(series).Float64, ShouldEqual, 2)
@@ -104,12 +103,12 @@ func TestSimpleReducer(t *testing.T) {
 
 			Convey("with null values", func() {
 				reducer := newSimpleReducer("count_non_null")
-				series := &tsdb.TimeSeries{
+				series := plugins.DataTimeSeries{
 					Name: "test time series",
 				}
 
-				series.Points = append(series.Points, tsdb.NewTimePoint(null.FloatFromPtr(nil), 1))
-				series.Points = append(series.Points, tsdb.NewTimePoint(null.FloatFromPtr(nil), 2))
+				series.Points = append(series.Points, plugins.DataTimePoint{null.FloatFromPtr(nil), null.FloatFrom(1)})
+				series.Points = append(series.Points, plugins.DataTimePoint{null.FloatFromPtr(nil), null.FloatFrom(2)})
 
 				So(reducer.Reduce(series).Valid, ShouldEqual, false)
 			})
@@ -117,14 +116,14 @@ func TestSimpleReducer(t *testing.T) {
 
 		Convey("avg of number values and null values should ignore nulls", func() {
 			reducer := newSimpleReducer("avg")
-			series := &tsdb.TimeSeries{
+			series := plugins.DataTimeSeries{
 				Name: "test time series",
 			}
 
-			series.Points = append(series.Points, tsdb.NewTimePoint(null.FloatFrom(3), 1))
-			series.Points = append(series.Points, tsdb.NewTimePoint(null.FloatFromPtr(nil), 2))
-			series.Points = append(series.Points, tsdb.NewTimePoint(null.FloatFromPtr(nil), 3))
-			series.Points = append(series.Points, tsdb.NewTimePoint(null.FloatFrom(3), 4))
+			series.Points = append(series.Points, plugins.DataTimePoint{null.FloatFrom(3), null.FloatFrom(1)})
+			series.Points = append(series.Points, plugins.DataTimePoint{null.FloatFromPtr(nil), null.FloatFrom(2)})
+			series.Points = append(series.Points, plugins.DataTimePoint{null.FloatFromPtr(nil), null.FloatFrom(3)})
+			series.Points = append(series.Points, plugins.DataTimePoint{null.FloatFrom(3), null.FloatFrom(4)})
 
 			So(reducer.Reduce(series).Float64, ShouldEqual, float64(3))
 		})
@@ -182,12 +181,12 @@ func TestSimpleReducer(t *testing.T) {
 
 		Convey("diff with only nulls", func() {
 			reducer := newSimpleReducer("diff")
-			series := &tsdb.TimeSeries{
+			series := plugins.DataTimeSeries{
 				Name: "test time series",
 			}
 
-			series.Points = append(series.Points, tsdb.NewTimePoint(null.FloatFromPtr(nil), 1))
-			series.Points = append(series.Points, tsdb.NewTimePoint(null.FloatFromPtr(nil), 2))
+			series.Points = append(series.Points, plugins.DataTimePoint{null.FloatFromPtr(nil), null.FloatFrom(1)})
+			series.Points = append(series.Points, plugins.DataTimePoint{null.FloatFromPtr(nil), null.FloatFrom(2)})
 
 			So(reducer.Reduce(series).Valid, ShouldEqual, false)
 		})
@@ -245,12 +244,12 @@ func TestSimpleReducer(t *testing.T) {
 
 		Convey("diff_abs with only nulls", func() {
 			reducer := newSimpleReducer("diff_abs")
-			series := &tsdb.TimeSeries{
+			series := plugins.DataTimeSeries{
 				Name: "test time series",
 			}
 
-			series.Points = append(series.Points, tsdb.NewTimePoint(null.FloatFromPtr(nil), 1))
-			series.Points = append(series.Points, tsdb.NewTimePoint(null.FloatFromPtr(nil), 2))
+			series.Points = append(series.Points, plugins.DataTimePoint{null.FloatFromPtr(nil), null.FloatFrom(1)})
+			series.Points = append(series.Points, plugins.DataTimePoint{null.FloatFromPtr(nil), null.FloatFrom(2)})
 
 			So(reducer.Reduce(series).Valid, ShouldEqual, false)
 		})
@@ -308,12 +307,12 @@ func TestSimpleReducer(t *testing.T) {
 
 		Convey("percent_diff with only nulls", func() {
 			reducer := newSimpleReducer("percent_diff")
-			series := &tsdb.TimeSeries{
+			series := plugins.DataTimeSeries{
 				Name: "test time series",
 			}
 
-			series.Points = append(series.Points, tsdb.NewTimePoint(null.FloatFromPtr(nil), 1))
-			series.Points = append(series.Points, tsdb.NewTimePoint(null.FloatFromPtr(nil), 2))
+			series.Points = append(series.Points, plugins.DataTimePoint{null.FloatFromPtr(nil), null.FloatFrom(1)})
+			series.Points = append(series.Points, plugins.DataTimePoint{null.FloatFromPtr(nil), null.FloatFrom(2)})
 
 			So(reducer.Reduce(series).Valid, ShouldEqual, false)
 		})
@@ -371,12 +370,12 @@ func TestSimpleReducer(t *testing.T) {
 
 		Convey("percent_diff_abs with only nulls", func() {
 			reducer := newSimpleReducer("percent_diff_abs")
-			series := &tsdb.TimeSeries{
+			series := plugins.DataTimeSeries{
 				Name: "test time series",
 			}
 
-			series.Points = append(series.Points, tsdb.NewTimePoint(null.FloatFromPtr(nil), 1))
-			series.Points = append(series.Points, tsdb.NewTimePoint(null.FloatFromPtr(nil), 2))
+			series.Points = append(series.Points, plugins.DataTimePoint{null.FloatFromPtr(nil), null.FloatFrom(1)})
+			series.Points = append(series.Points, plugins.DataTimePoint{null.FloatFromPtr(nil), null.FloatFrom(2)})
 
 			So(reducer.Reduce(series).Valid, ShouldEqual, false)
 		})
@@ -400,12 +399,12 @@ func TestSimpleReducer(t *testing.T) {
 
 func testReducer(reducerType string, datapoints ...float64) float64 {
 	reducer := newSimpleReducer(reducerType)
-	series := &tsdb.TimeSeries{
+	series := plugins.DataTimeSeries{
 		Name: "test time series",
 	}
 
 	for idx := range datapoints {
-		series.Points = append(series.Points, tsdb.NewTimePoint(null.FloatFrom(datapoints[idx]), 1234134))
+		series.Points = append(series.Points, plugins.DataTimePoint{null.FloatFrom(datapoints[idx]), null.FloatFrom(1234134)})
 	}
 
 	return reducer.Reduce(series).Float64

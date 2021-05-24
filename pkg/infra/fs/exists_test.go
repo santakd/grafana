@@ -1,10 +1,12 @@
 package fs
 
 import (
-	"github.com/stretchr/testify/require"
 	"io/ioutil"
 	"os"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestExists_NonExistent(t *testing.T) {
@@ -17,7 +19,10 @@ func TestExists_NonExistent(t *testing.T) {
 func TestExists_Existent(t *testing.T) {
 	f, err := ioutil.TempFile("", "")
 	require.NoError(t, err)
-	defer os.Remove(f.Name())
+	t.Cleanup(func() {
+		err := os.Remove(f.Name())
+		assert.NoError(t, err)
+	})
 
 	exists, err := Exists(f.Name())
 	require.NoError(t, err)

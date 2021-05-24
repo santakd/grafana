@@ -14,21 +14,20 @@
 
 import * as React from 'react';
 import jsonMarkup from 'json-markup';
-import { css } from 'emotion';
+import { css } from '@emotion/css';
 import cx from 'classnames';
 
 import CopyIcon from '../../common/CopyIcon';
 
 import { TNil } from '../../types';
-import { KeyValuePair, Link } from '../../types/trace';
+import { TraceKeyValuePair, TraceLink } from '../../types/trace';
 import { UIDropdown, UIIcon, UIMenu, UIMenuItem } from '../../uiElementsContext';
 import { autoColor, createStyle, Theme, useTheme } from '../../Theme';
 import { ubInlineBlock, uWidth100 } from '../../uberUtilityStyles';
 
+const copyIconClassName = 'copyIcon';
+
 export const getStyles = createStyle((theme: Theme) => {
-  const copyIcon = css`
-    label: copyIcon;
-  `;
   return {
     KeyValueTable: css`
       label: KeyValueTable;
@@ -52,7 +51,7 @@ export const getStyles = createStyle((theme: Theme) => {
       &:nth-child(2n) > td {
         background: ${autoColor(theme, '#f5f5f5')};
       }
-      &:not(:hover) .${copyIcon} {
+      &:not(:hover) .${copyIconClassName} {
         display: none;
       }
     `,
@@ -71,7 +70,6 @@ export const getStyles = createStyle((theme: Theme) => {
       vertical-align: middle;
       font-weight: bold;
     `,
-    copyIcon,
   };
 });
 
@@ -102,7 +100,7 @@ LinkValue.defaultProps = {
   title: '',
 };
 
-const linkValueList = (links: Link[]) => (
+const linkValueList = (links: TraceLink[]) => (
   <UIMenu>
     {links.map(({ text, url }, index) => (
       // `index` is necessary in the key because url can repeat
@@ -114,8 +112,8 @@ const linkValueList = (links: Link[]) => (
 );
 
 type KeyValuesTableProps = {
-  data: KeyValuePair[];
-  linksGetter: ((pairs: KeyValuePair[], index: number) => Link[]) | TNil;
+  data: TraceKeyValuePair[];
+  linksGetter: ((pairs: TraceKeyValuePair[], index: number) => TraceLink[]) | TNil;
 };
 
 export default function KeyValuesTable(props: KeyValuesTableProps) {
@@ -162,7 +160,7 @@ export default function KeyValuesTable(props: KeyValuesTableProps) {
                 <td>{valueMarkup}</td>
                 <td className={styles.copyColumn}>
                   <CopyIcon
-                    className={styles.copyIcon}
+                    className={copyIconClassName}
                     copyText={JSON.stringify(row, null, 2)}
                     tooltipTitle="Copy JSON"
                   />

@@ -18,6 +18,7 @@ describe('DerivedFields', () => {
 
   it('renders correctly when no fields', async () => {
     let wrapper: any;
+    //@ts-ignore
     await act(async () => {
       wrapper = await mount(<DerivedFields onChange={() => {}} />);
     });
@@ -28,6 +29,7 @@ describe('DerivedFields', () => {
 
   it('renders correctly when there are fields', async () => {
     let wrapper: any;
+    //@ts-ignore
     await act(async () => {
       wrapper = await mount(<DerivedFields value={testValue} onChange={() => {}} />);
     });
@@ -36,12 +38,19 @@ describe('DerivedFields', () => {
     expect(wrapper.find(Button).filterWhere((button: any) => button.contains('Show example log message')).length).toBe(
       1
     );
+    expect(
+      wrapper
+        .find(Button)
+        .filterWhere((button: any) => button.contains('Show example log message'))
+        .getDOMNode()
+    ).toHaveAttribute('type', 'button');
     expect(wrapper.find(DerivedField).length).toBe(2);
   });
 
   it('adds new field', async () => {
     const onChangeMock = jest.fn();
     let wrapper: any;
+    //@ts-ignore
     await act(async () => {
       wrapper = await mount(<DerivedFields onChange={onChangeMock} />);
     });
@@ -53,13 +62,11 @@ describe('DerivedFields', () => {
   it('removes field', async () => {
     const onChangeMock = jest.fn();
     let wrapper: any;
+    //@ts-ignore
     await act(async () => {
       wrapper = await mount(<DerivedFields value={testValue} onChange={onChangeMock} />);
     });
-    const removeButton = wrapper
-      .find(DerivedField)
-      .at(0)
-      .find(Button);
+    const removeButton = wrapper.find(DerivedField).at(0).find(Button);
     removeButton.simulate('click');
     const newValue = onChangeMock.mock.calls[0][0];
     expect(newValue.length).toBe(1);

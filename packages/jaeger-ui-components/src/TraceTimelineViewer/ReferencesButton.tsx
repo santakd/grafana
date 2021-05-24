@@ -13,9 +13,9 @@
 // limitations under the License.
 
 import React from 'react';
-import { css } from 'emotion';
+import { css } from '@emotion/css';
 import NewWindowIcon from '../common/NewWindowIcon';
-import { SpanReference } from '../types/trace';
+import { TraceSpanReference } from '../types/trace';
 import { UITooltip, UIDropdown, UIMenuItem, UIMenu, TooltipPlacement } from '../uiElementsContext';
 
 import ReferenceLink from '../url/ReferenceLink';
@@ -44,18 +44,18 @@ export const getStyles = createStyle(() => {
 });
 
 type TReferencesButtonProps = {
-  references: SpanReference[];
+  references: TraceSpanReference[];
   children: React.ReactNode;
   tooltipText: string;
   focusSpan: (spanID: string) => void;
 };
 
 export default class ReferencesButton extends React.PureComponent<TReferencesButtonProps> {
-  referencesList = (references: SpanReference[]) => {
+  referencesList = (references: TraceSpanReference[]) => {
     const styles = getStyles();
     return (
       <UIMenu>
-        {references.map(ref => {
+        {references.map((ref) => {
           const { span, spanID } = ref;
           return (
             <UIMenuItem key={`${spanID}`}>

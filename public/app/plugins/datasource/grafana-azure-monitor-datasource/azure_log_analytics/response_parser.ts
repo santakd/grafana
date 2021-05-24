@@ -1,15 +1,7 @@
-import _ from 'lodash';
-import { dateTime } from '@grafana/data';
-import {
-  AzureLogsVariable,
-  AzureLogsTableData,
-  KustoDatabase,
-  KustoFunction,
-  KustoTable,
-  KustoSchema,
-  KustoColumn,
-} from '../types';
-import { TimeSeries, AnnotationEvent } from '@grafana/data';
+import { concat, find, flattenDeep, forEach, map } from 'lodash';
+import { AnnotationEvent, dateTime, TimeSeries } from '@grafana/data';
+import { AzureLogsTableData, AzureLogsVariable } from '../types';
+import { AzureLogAnalyticsMetadata } from '../types/logAnalyticsMetadata';
 
 export default class ResponseParser {
   columns: string[];
@@ -26,9 +18,9 @@ export default class ResponseParser {
       const rows = this.results[i].result.data.tables[0].rows;
 
       if (this.results[i].query.resultFormat === 'time_series') {
-        data = _.concat(data, this.parseTimeSeriesResult(this.results[i].query, columns, rows));
+        data = concat(data, this.parseTimeSeriesResult(this.results[i].query, columns, rows));
       } else {
-        data = _.concat(data, this.parseTableResult(this.results[i].query, columns, rows));
+        data = concat(data, this.parseTableResult(this.results[i].query, columns, rows));
       }
     }
 
@@ -59,14 +51,14 @@ export default class ResponseParser {
       throw new Error('No datetime column found in the result. The Time Series format requires a time column.');
     }
 
-    _.forEach(rows, row => {
+    forEach(rows, (row) => {
       const epoch = ResponseParser.dateTimeToEpoch(row[timeIndex]);
       const metricName = metricIndex > -1 ? row[metricIndex] : columns[valueIndex].name;
       const bucket = ResponseParser.findOrCreateBucket(data, metricName);
       bucket.datapoints.push([row[valueIndex], epoch]);
       bucket.refId = query.refId;
       bucket.meta = {
-        query: query.query,
+        executedQueryString: query.query,
       };
     });
 
@@ -76,13 +68,13 @@ export default class ResponseParser {
   parseTableResult(query: { refId: string; query: string }, columns: any[], rows: any[]): AzureLogsTableData {
     const tableResult: AzureLogsTableData = {
       type: 'table',
-      columns: _.map(columns, col => {
+      columns: map(columns, (col) => {
         return { text: col.name, type: col.type };
       }),
       rows: rows,
       refId: query.refId,
       meta: {
-        query: query.query,
+        executedQueryString: query.query,
       },
     };
 
@@ -93,8 +85,8 @@ export default class ResponseParser {
     const queryResult = this.parseQueryResult();
 
     const variables: AzureLogsVariable[] = [];
-    _.forEach(queryResult, result => {
-      _.forEach(_.flattenDeep(result.rows), row => {
+    forEach(queryResult, (result) => {
+      forEach(flattenDeep(result.rows), (row) => {
         variables.push({
           text: row,
           value: row,
@@ -110,7 +102,7 @@ export default class ResponseParser {
 
     const list: AnnotationEvent[] = [];
 
-    _.forEach(queryResult, result => {
+    forEach(queryResult, (result) => {
       let timeIndex = -1;
       let textIndex = -1;
       let tagsIndex = -1;
@@ -129,7 +121,7 @@ export default class ResponseParser {
         }
       }
 
-      _.forEach(result.rows, row => {
+      forEach(result.rows, (row) => {
         list.push({
           annotation: options.annotation,
           time: Math.floor(ResponseParser.dateTimeToEpoch(row[timeIndex])),
@@ -142,72 +134,8 @@ export default class ResponseParser {
     return list;
   }
 
-  parseSchemaResult(): KustoSchema {
-    return {
-      Plugins: [
-        {
-          Name: 'pivot',
-        },
-      ],
-      Databases: this.createSchemaDatabaseWithTables(),
-    };
-  }
-
-  createSchemaDatabaseWithTables(): { [key: string]: KustoDatabase } {
-    const databases = {
-      Default: {
-        Name: 'Default',
-        Tables: this.createSchemaTables(),
-        Functions: this.createSchemaFunctions(),
-      },
-    };
-
-    return databases;
-  }
-
-  createSchemaTables(): { [key: string]: KustoTable } {
-    const tables: { [key: string]: KustoTable } = {};
-
-    for (const table of this.results.tables) {
-      tables[table.name] = {
-        Name: table.name,
-        OrderedColumns: [],
-      };
-      for (const col of table.columns) {
-        tables[table.name].OrderedColumns.push(this.convertToKustoColumn(col));
-      }
-    }
-
-    return tables;
-  }
-
-  convertToKustoColumn(col: any): KustoColumn {
-    return {
-      Name: col.name,
-      Type: col.type,
-    };
-  }
-
-  createSchemaFunctions(): { [key: string]: KustoFunction } {
-    const functions: { [key: string]: KustoFunction } = {};
-
-    for (const func of this.results.functions) {
-      functions[func.name] = {
-        Name: func.name,
-        Body: func.body,
-        DocString: func.displayName,
-        Folder: func.category,
-        FunctionKind: 'Unknown',
-        InputParameters: [],
-        OutputColumns: [],
-      };
-    }
-
-    return functions;
-  }
-
   static findOrCreateBucket(data: TimeSeries[], target: any): TimeSeries {
-    let dataTarget: any = _.find(data, ['target', target]);
+    let dataTarget: any = find(data, ['target', target]);
     if (!dataTarget) {
       dataTarget = { target: target, datapoints: [], refId: '', query: '' };
       data.push(dataTarget);
@@ -219,4 +147,65 @@ export default class ResponseParser {
   static dateTimeToEpoch(dateTimeValue: any) {
     return dateTime(dateTimeValue).valueOf();
   }
+}
+
+// matches (name):(type) = (defaultValue)
+// e.g. fromRangeStart:datetime = datetime(null)
+//  - name: fromRangeStart
+//  - type: datetime
+//  - defaultValue: datetime(null)
+const METADATA_FUNCTION_PARAMS = /([\w\W]+):([\w]+)(?:\s?=\s?([\w\W]+))?/;
+
+function transformMetadataFunction(sourceSchema: AzureLogAnalyticsMetadata) {
+  if (!sourceSchema.functions) {
+    return [];
+  }
+
+  return sourceSchema.functions.map((fn) => {
+    const params =
+      fn.parameters &&
+      fn.parameters
+        .split(', ')
+        .map((arg) => {
+          const match = arg.match(METADATA_FUNCTION_PARAMS);
+          if (!match) {
+            return;
+          }
+
+          const [, name, type, defaultValue] = match;
+
+          return {
+            name,
+            type,
+            defaultValue,
+            cslDefaultValue: defaultValue,
+          };
+        })
+        .filter(<T>(v: T): v is Exclude<T, undefined> => !!v);
+
+    return {
+      name: fn.name,
+      body: fn.body,
+      inputParameters: params || [],
+    };
+  });
+}
+
+export function transformMetadataToKustoSchema(sourceSchema: AzureLogAnalyticsMetadata, nameOrIdOrSomething: string) {
+  const database = {
+    name: nameOrIdOrSomething,
+    tables: sourceSchema.tables,
+    functions: transformMetadataFunction(sourceSchema),
+    majorVersion: 0,
+    minorVersion: 0,
+  };
+
+  return {
+    clusterType: 'Engine',
+    cluster: {
+      connectionString: nameOrIdOrSomething,
+      databases: [database],
+    },
+    database: database,
+  };
 }

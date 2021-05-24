@@ -3,28 +3,49 @@ import EmptyListCTA from 'app/core/components/EmptyListCTA/EmptyListCTA';
 import Page from 'app/core/components/Page/Page';
 import { getBackendSrv } from '@grafana/runtime';
 import { useAsyncFn } from 'react-use';
+import { appEvents } from 'app/core/core';
 import { useNavModel } from 'app/core/hooks/useNavModel';
 import { HorizontalGroup, Button, LinkButton } from '@grafana/ui';
 import { AlertNotification } from 'app/types/alerting';
-
-const deleteNotification = async (id: number) => {
-  return await getBackendSrv().delete(`/api/alert-notifications/${id}`);
-};
-
-const getNotifications = async () => {
-  return await getBackendSrv().get(`/api/alert-notifications`);
-};
+import { ShowConfirmModalEvent } from '../../types/events';
 
 const NotificationsListPage: FC = () => {
   const navModel = useNavModel('channels');
 
   const [notifications, setNotifications] = useState<AlertNotification[]>([]);
+
+  const getNotifications = async () => {
+    return await getBackendSrv().get(`/api/alert-notifications`);
+  };
+
   const [state, fetchNotifications] = useAsyncFn(getNotifications);
   useEffect(() => {
-    fetchNotifications().then(res => {
+    fetchNotifications().then((res) => {
       setNotifications(res);
     });
-  }, []);
+  }, [fetchNotifications]);
+
+  const deleteNotification = (id: number) => {
+    appEvents.publish(
+      new ShowConfirmModalEvent({
+        title: 'Delete',
+        text: 'Do you want to delete this notification channel?',
+        text2: `Deleting this notification channel will not delete from alerts any references to it`,
+        icon: 'trash-alt',
+        confirmText: 'Delete',
+        yesText: 'Delete',
+        onConfirm: async () => {
+          deleteNotificationConfirmed(id);
+        },
+      })
+    );
+  };
+
+  const deleteNotificationConfirmed = async (id: number) => {
+    await getBackendSrv().delete(`/api/alert-notifications/${id}`);
+    const notifications = await fetchNotifications();
+    setNotifications(notifications);
+  };
 
   return (
     <Page navModel={navModel}>
@@ -49,7 +70,7 @@ const NotificationsListPage: FC = () => {
                 </tr>
               </thead>
               <tbody>
-                {notifications.map(notification => (
+                {notifications.map((notification) => (
                   <tr key={notification.id}>
                     <td className="link-td">
                       <a href={`alerting/notification/${notification.id}/edit`}>{notification.name}</a>
@@ -70,8 +91,6 @@ const NotificationsListPage: FC = () => {
                           size="sm"
                           onClick={() => {
                             deleteNotification(notification.id);
-                            setNotifications(notifications.filter(notify => notify.id !== notification.id));
-                            fetchNotifications();
                           }}
                         />
                       </HorizontalGroup>

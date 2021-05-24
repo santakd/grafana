@@ -13,15 +13,15 @@
 // limitations under the License.
 
 import * as React from 'react';
-import _sortBy from 'lodash/sortBy';
+import { sortBy as _sortBy } from 'lodash';
 import IoIosArrowDown from 'react-icons/lib/io/ios-arrow-down';
 import IoIosArrowRight from 'react-icons/lib/io/ios-arrow-right';
-import { css } from 'emotion';
+import { css } from '@emotion/css';
 
 import AccordianKeyValues from './AccordianKeyValues';
 import { formatDuration } from '../utils';
 import { TNil } from '../../types';
-import { Log, KeyValuePair, Link } from '../../types/trace';
+import { TraceLog, TraceKeyValuePair, TraceLink } from '../../types/trace';
 import { autoColor, createStyle, Theme, useTheme } from '../../Theme';
 import { uAlignIcon, ubMb1 } from '../../uberUtilityStyles';
 
@@ -59,11 +59,11 @@ const getStyles = createStyle((theme: Theme) => {
 type AccordianLogsProps = {
   interactive?: boolean;
   isOpen: boolean;
-  linksGetter: ((pairs: KeyValuePair[], index: number) => Link[]) | TNil;
-  logs: Log[];
-  onItemToggle?: (log: Log) => void;
+  linksGetter: ((pairs: TraceKeyValuePair[], index: number) => TraceLink[]) | TNil;
+  logs: TraceLog[];
+  onItemToggle?: (log: TraceLog) => void;
   onToggle?: () => void;
-  openedItems?: Set<Log>;
+  openedItems?: Set<TraceLog>;
   timestamp: number;
 };
 

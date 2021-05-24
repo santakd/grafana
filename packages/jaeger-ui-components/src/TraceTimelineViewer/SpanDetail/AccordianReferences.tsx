@@ -13,12 +13,12 @@
 // limitations under the License.
 
 import * as React from 'react';
-import { css } from 'emotion';
+import { css } from '@emotion/css';
 import cx from 'classnames';
 
 import IoIosArrowDown from 'react-icons/lib/io/ios-arrow-down';
 import IoIosArrowRight from 'react-icons/lib/io/ios-arrow-right';
-import { SpanReference } from '../../types/trace';
+import { TraceSpanReference } from '../../types/trace';
 import ReferenceLink from '../../url/ReferenceLink';
 
 import { createStyle } from '../../Theme';
@@ -66,7 +66,7 @@ const getStyles = createStyle(() => {
 });
 
 type AccordianReferencesProps = {
-  data: SpanReference[];
+  data: TraceSpanReference[];
   highContrast?: boolean;
   interactive?: boolean;
   isOpen: boolean;
@@ -75,7 +75,7 @@ type AccordianReferencesProps = {
 };
 
 type ReferenceItemProps = {
-  data: SpanReference[];
+  data: TraceSpanReference[];
   focusSpan: (uiFind: string) => void;
 };
 
@@ -87,7 +87,7 @@ export function References(props: ReferenceItemProps) {
   return (
     <div className={cx(styles.ReferencesList)}>
       <ul className={styles.list}>
-        {data.map(reference => {
+        {data.map((reference) => {
           return (
             <li className={styles.item} key={`${reference.spanID}`}>
               <ReferenceLink reference={reference} focusSpan={focusSpan}>

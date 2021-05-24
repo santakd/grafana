@@ -1,15 +1,3 @@
-.panel-wrapper {
-  height: 100%;
-  position: relative;
-
-  &--view {
-    flex: 1 1 0;
-    height: 90%;
-    margin: 0 $dashboard-padding;
-    padding-top: $dashboard-padding;
-  }
-}
-
 .panel-editor__scroll {
   flex-grow: 1;
   min-width: 0;
@@ -24,25 +12,7 @@
 }
 
 .panel-in-fullscreen {
-  .sidemenu {
-    display: none;
-  }
-
-  .dashboard-container {
-    padding: 0;
-  }
-
-  .submenu-controls {
-    padding: 0 $dashboard-padding $space-sm $dashboard-padding;
-  }
-
   .search-container {
     left: 0 !important;
   }
-}
-
-.ds-picker {
-  position: relative;
-  min-width: 200px;
-  max-width: 300px;
 }

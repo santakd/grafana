@@ -1,10 +1,17 @@
 import React from 'react';
-import { mount } from 'enzyme';
-import { act } from 'react-dom/test-utils';
-import { mockSearch } from './mocks';
-import { DashboardSearch } from './DashboardSearch';
+import { render, fireEvent, screen, waitFor, act } from '@testing-library/react';
+import selectEvent from 'react-select-event';
+import * as SearchSrv from 'app/core/services/search_srv';
+import * as MockSearchSrv from 'app/core/services/__mocks__/search_srv';
+import { DashboardSearch, Props } from './DashboardSearch';
 import { searchResults } from '../testData';
 import { SearchLayout } from '../types';
+import { locationService } from '@grafana/runtime';
+
+jest.mock('app/core/services/search_srv');
+// Typecast the mock search so the mock import is correctly recognised by TS
+// https://stackoverflow.com/a/53222290
+const { mockSearch } = SearchSrv as typeof MockSearchSrv;
 
 beforeEach(() => {
   jest.useFakeTimers();
@@ -15,17 +22,13 @@ afterEach(() => {
   jest.useRealTimers();
 });
 
-const setup = async (): Promise<any> => {
+const setup = (testProps?: Partial<Props>) => {
   const props: any = {
     onCloseSearch: () => {},
+    ...testProps,
   };
-  let wrapper;
-  //@ts-ignore
-  await act(async () => {
-    wrapper = await mount(<DashboardSearch {...props} />);
-    jest.runAllTimers();
-  });
-  return wrapper;
+  render(<DashboardSearch {...props} />);
+  jest.runAllTimers();
 };
 
 /**
@@ -34,7 +37,10 @@ const setup = async (): Promise<any> => {
  */
 describe('DashboardSearch', () => {
   it('should call search api with default query when initialised', async () => {
-    await setup();
+    locationService.push('/');
+    setup();
+
+    await waitFor(() => screen.getByPlaceholderText('Search dashboards by name'));
 
     expect(mockSearch).toHaveBeenCalledTimes(1);
     expect(mockSearch).toHaveBeenCalledWith({
@@ -46,23 +52,19 @@ describe('DashboardSearch', () => {
       folderIds: [],
       layout: SearchLayout.Folders,
       sort: undefined,
+      prevSort: null,
     });
   });
 
   it('should call api with updated query on query change', async () => {
-    let wrapper = await setup();
+    locationService.push('/');
+    setup();
 
-    //@ts-ignore
-    await act(async () => {
-      // @ts-ignore
-      await wrapper
-        .find({ placeholder: 'Search dashboards by name' })
-        .hostNodes()
-        //@ts-ignore
-        .prop('onChange')({ currentTarget: { value: 'Test' } });
-
+    const input = await screen.findByPlaceholderText('Search dashboards by name');
+    await act((async () => {
+      await fireEvent.input(input, { target: { value: 'Test' } });
       jest.runAllTimers();
-    });
+    }) as any);
 
     expect(mockSearch).toHaveBeenCalledWith({
       query: 'Test',
@@ -73,48 +75,68 @@ describe('DashboardSearch', () => {
       folderIds: [],
       layout: SearchLayout.Folders,
       sort: undefined,
+      prevSort: null,
     });
   });
 
   it("should render 'No results' message when there are no dashboards", async () => {
-    let wrapper = await setup();
+    locationService.push('/');
+    setup();
 
-    wrapper.update();
-    expect(
-      wrapper
-        .findWhere((c: any) => c.type() === 'div' && c.text() === 'No dashboards matching your query were found.')
-        .exists()
-    ).toBe(true);
+    const message = await screen.findByText('No dashboards matching your query were found.');
+    expect(message).toBeInTheDocument();
   });
 
   it('should render search results', async () => {
-    //@ts-ignore
-    mockSearch.mockImplementation(() => Promise.resolve(searchResults));
-    let wrapper = await setup();
-    wrapper.update();
-    expect(wrapper.find({ 'aria-label': 'Search section' })).toHaveLength(2);
-    expect(wrapper.find({ 'aria-label': 'Search items' }).children()).toHaveLength(2);
+    mockSearch.mockResolvedValueOnce(searchResults);
+
+    locationService.push('/');
+    setup();
+
+    const section = await screen.findAllByLabelText('Search section');
+    expect(section).toHaveLength(2);
+    expect(screen.getAllByLabelText('Search items')).toHaveLength(1);
   });
 
   it('should call search with selected tags', async () => {
-    let wrapper = await setup();
+    locationService.push('/');
+    setup();
 
-    //@ts-ignore
-    await act(async () => {
-      //@ts-ignore
-      await wrapper.find('TagFilter').prop('onChange')(['TestTag']);
-      jest.runAllTimers();
-    });
+    await waitFor(() => screen.getByLabelText('Tag filter'));
 
-    expect(mockSearch).toHaveBeenCalledWith({
-      query: '',
-      skipRecent: false,
-      skipStarred: false,
-      tag: ['TestTag'],
-      starred: false,
-      folderIds: [],
-      layout: SearchLayout.Folders,
-      sort: undefined,
+    const tagComponent = screen.getByLabelText('Tag filter');
+    await selectEvent.select(tagComponent, 'tag1');
+
+    expect(tagComponent).toBeInTheDocument();
+
+    await waitFor(() =>
+      expect(mockSearch).toHaveBeenCalledWith({
+        query: '',
+        skipRecent: false,
+        skipStarred: false,
+        tag: ['tag1'],
+        starred: false,
+        folderIds: [],
+        layout: SearchLayout.Folders,
+        sort: undefined,
+        prevSort: null,
+      })
+    );
+  });
+
+  it('should call search api with provided search params', async () => {
+    locationService.partial({ query: 'test query', tag: ['tag1'], sort: 'asc' });
+    setup({});
+
+    await waitFor(() => {
+      expect(mockSearch).toHaveBeenCalledTimes(1);
+      expect(mockSearch).toHaveBeenCalledWith(
+        expect.objectContaining({
+          query: 'test query',
+          tag: ['tag1'],
+          sort: 'asc',
+        })
+      );
     });
   });
 });

@@ -44,7 +44,6 @@ func main() {
 	if enterprise {
 		product = "grafana-enterprise"
 		baseURL = createBaseURL(archiveProviderRoot, "enterprise", product, nightly)
-
 	} else {
 		product = "grafana"
 		baseURL = createBaseURL(archiveProviderRoot, "oss", product, nightly)
@@ -72,7 +71,7 @@ func main() {
 func createBaseURL(root string, bucketName string, product string, nightly bool) string {
 	var subPath string
 	if nightly {
-		subPath = "master"
+		subPath = "main"
 	} else {
 		subPath = "release"
 	}

@@ -17,15 +17,30 @@ import {
   ValueMappingFieldConfigSettings,
   valueMappingsOverrideProcessor,
   ThresholdsMode,
+  identityOverrideProcessor,
+  TimeZone,
+  FieldColor,
+  FieldColorConfigSettings,
+  StatsPickerConfigSettings,
 } from '@grafana/data';
 
 import { Switch } from '../components/Switch/Switch';
-import { NumberValueEditor, RadioButtonGroup, StringValueEditor, Select } from '../components';
+import {
+  NumberValueEditor,
+  SliderValueEditor,
+  RadioButtonGroup,
+  StringValueEditor,
+  StringArrayEditor,
+  SelectValueEditor,
+  MultiSelectValueEditor,
+  TimeZonePicker,
+} from '../components';
 import { ValueMappingsValueEditor } from '../components/OptionsUI/mappings';
 import { ThresholdsValueEditor } from '../components/OptionsUI/thresholds';
 import { UnitValueEditor } from '../components/OptionsUI/units';
 import { DataLinksValueEditor } from '../components/OptionsUI/links';
 import { ColorValueEditor } from '../components/OptionsUI/color';
+import { FieldColorEditor } from '../components/OptionsUI/fieldColor';
 import { StatsPickerEditor } from '../components/OptionsUI/stats';
 
 /**
@@ -63,7 +78,7 @@ export const getStandardFieldConfigs = () => {
       placeholder: 'none',
     },
 
-    shouldApply: field => field.type === FieldType.number,
+    shouldApply: () => true,
     category,
   };
 
@@ -80,7 +95,7 @@ export const getStandardFieldConfigs = () => {
     settings: {
       placeholder: 'auto',
     },
-    shouldApply: field => field.type === FieldType.number,
+    shouldApply: (field) => field.type === FieldType.number,
     category,
   };
 
@@ -98,7 +113,7 @@ export const getStandardFieldConfigs = () => {
       placeholder: 'auto',
     },
 
-    shouldApply: field => field.type === FieldType.number,
+    shouldApply: (field) => field.type === FieldType.number,
     category,
   };
 
@@ -118,7 +133,7 @@ export const getStandardFieldConfigs = () => {
       integer: true,
     },
 
-    shouldApply: field => field.type === FieldType.number,
+    shouldApply: (field) => field.type === FieldType.number,
     category,
   };
 
@@ -126,7 +141,6 @@ export const getStandardFieldConfigs = () => {
     id: 'thresholds',
     path: 'thresholds',
     name: 'Thresholds',
-
     editor: standardEditorsRegistry.get('thresholds').editor as any,
     override: standardEditorsRegistry.get('thresholds').editor as any,
     process: thresholdsOverrideProcessor,
@@ -138,22 +152,23 @@ export const getStandardFieldConfigs = () => {
         { value: 80, color: 'red' },
       ],
     },
-    shouldApply: field => field.type === FieldType.number,
+    shouldApply: () => true,
     category: ['Thresholds'],
-    getItemsCount: value => (value ? value.steps.length : 0),
+    getItemsCount: (value) => (value ? value.steps.length : 0),
   };
 
   const mappings: FieldConfigPropertyItem<any, ValueMapping[], ValueMappingFieldConfigSettings> = {
     id: 'mappings',
     path: 'mappings',
     name: 'Value mappings',
+    description: 'Modify the display text based on input value',
 
     editor: standardEditorsRegistry.get('mappings').editor as any,
     override: standardEditorsRegistry.get('mappings').editor as any,
     process: valueMappingsOverrideProcessor,
     settings: {},
     defaultValue: [],
-    shouldApply: field => field.type === FieldType.number,
+    shouldApply: () => true,
     category: ['Value mappings'],
     getItemsCount: (value?) => (value ? value.length : 0),
   };
@@ -188,25 +203,25 @@ export const getStandardFieldConfigs = () => {
     },
     shouldApply: () => true,
     category: ['Data links'],
-    getItemsCount: value => (value ? value.length : 0),
+    getItemsCount: (value) => (value ? value.length : 0),
   };
 
-  // const color: FieldConfigPropertyItem<any, string, StringFieldConfigSettings> = {
-  //   id: 'color',
-  //   path: 'color',
-  //   name: 'Color',
-  //   description: 'Customise color',
-  //   editor: standardEditorsRegistry.get('color').editor as any,
-  //   override: standardEditorsRegistry.get('color').editor as any,
-  //   process: identityOverrideProcessor,
-  //   settings: {
-  //     placeholder: '-',
-  //   },
-  //   shouldApply: () => true,
-  //   category: ['Color & thresholds'],
-  // };
+  const color: FieldConfigPropertyItem<any, FieldColor | undefined, FieldColorConfigSettings> = {
+    id: 'color',
+    path: 'color',
+    name: 'Color scheme',
+    editor: standardEditorsRegistry.get('fieldColor').editor as any,
+    override: standardEditorsRegistry.get('fieldColor').editor as any,
+    process: identityOverrideProcessor,
+    shouldApply: () => true,
+    settings: {
+      byValueSupport: true,
+      preferThresholdsMode: true,
+    },
+    category,
+  };
 
-  return [unit, min, max, decimals, displayName, noValue, thresholds, mappings, links];
+  return [unit, min, max, decimals, displayName, color, noValue, thresholds, mappings, links];
 };
 
 /**
@@ -220,6 +235,13 @@ export const getStandardOptionEditors = () => {
     editor: NumberValueEditor as any,
   };
 
+  const slider: StandardEditorsRegistryItem<number> = {
+    id: 'slider',
+    name: 'Slider',
+    description: 'Allows numeric values input',
+    editor: SliderValueEditor as any,
+  };
+
   const text: StandardEditorsRegistryItem<string> = {
     id: 'text',
     name: 'Text',
@@ -227,27 +249,43 @@ export const getStandardOptionEditors = () => {
     editor: StringValueEditor as any,
   };
 
+  const strings: StandardEditorsRegistryItem<string[]> = {
+    id: 'strings',
+    name: 'String array',
+    description: 'An array of strings',
+    editor: StringArrayEditor as any,
+  };
+
   const boolean: StandardEditorsRegistryItem<boolean> = {
     id: 'boolean',
     name: 'Boolean',
     description: 'Allows boolean values input',
-    editor: props => <Switch {...props} onChange={e => props.onChange(e.currentTarget.checked)} />,
+    editor(props) {
+      return <Switch {...props} onChange={(e) => props.onChange(e.currentTarget.checked)} />;
+    },
   };
 
   const select: StandardEditorsRegistryItem<any> = {
     id: 'select',
     name: 'Select',
     description: 'Allows option selection',
-    editor: props => (
-      <Select value={props.value} onChange={e => props.onChange(e.value)} options={props.item.settings?.options} />
-    ),
+    editor: SelectValueEditor as any,
+  };
+
+  const multiSelect: StandardEditorsRegistryItem<any> = {
+    id: 'multi-select',
+    name: 'Multi select',
+    description: 'Allows for multiple option selection',
+    editor: MultiSelectValueEditor as any,
   };
 
   const radio: StandardEditorsRegistryItem<any> = {
     id: 'radio',
     name: 'Radio',
     description: 'Allows option selection',
-    editor: props => <RadioButtonGroup {...props} options={props.item.settings?.options} />,
+    editor(props) {
+      return <RadioButtonGroup {...props} options={props.item.settings?.options} />;
+    },
   };
 
   const unit: StandardEditorsRegistryItem<string> = {
@@ -275,7 +313,16 @@ export const getStandardOptionEditors = () => {
     id: 'color',
     name: 'Color',
     description: 'Allows color selection',
-    editor: ColorValueEditor as any,
+    editor(props) {
+      return <ColorValueEditor value={props.value} onChange={props.onChange} />;
+    },
+  };
+
+  const fieldColor: StandardEditorsRegistryItem<FieldColor> = {
+    id: 'fieldColor',
+    name: 'Field Color',
+    description: 'Field color selection',
+    editor: FieldColorEditor as any,
   };
 
   const links: StandardEditorsRegistryItem<DataLink[]> = {
@@ -285,12 +332,36 @@ export const getStandardOptionEditors = () => {
     editor: DataLinksValueEditor as any,
   };
 
-  const statsPicker: StandardEditorsRegistryItem<string[]> = {
+  const statsPicker: StandardEditorsRegistryItem<string[], StatsPickerConfigSettings> = {
     id: 'stats-picker',
     name: 'Stats Picker',
     editor: StatsPickerEditor as any,
     description: '',
   };
 
-  return [text, number, boolean, radio, select, unit, mappings, thresholds, links, color, statsPicker];
+  const timeZone: StandardEditorsRegistryItem<TimeZone> = {
+    id: 'timezone',
+    name: 'Time Zone',
+    description: 'Time zone selection',
+    editor: TimeZonePicker as any,
+  };
+
+  return [
+    text,
+    number,
+    slider,
+    boolean,
+    radio,
+    select,
+    unit,
+    mappings,
+    thresholds,
+    links,
+    statsPicker,
+    strings,
+    timeZone,
+    fieldColor,
+    color,
+    multiSelect,
+  ];
 };

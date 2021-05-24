@@ -11,7 +11,7 @@ export enum PasswordFieldEnum {
 }
 
 /**
- * Basic shape for settings controllers in at the moment mostly angular datasource plugins.
+ * Basic shape for settings controllers in at the moment mostly angular data source plugins.
  */
 export type Ctrl = {
   current: {
@@ -31,7 +31,7 @@ export const createResetHandler = (ctrl: Ctrl, field: PasswordFieldEnum) => (
 ) => {
   event.preventDefault();
   // Reset also normal plain text password to remove it and only save it in secureJsonData.
-  ctrl.current[field] = null;
+  ctrl.current[field] = undefined;
   ctrl.current.secureJsonFields[field] = false;
   ctrl.current.secureJsonData = ctrl.current.secureJsonData || {};
   ctrl.current.secureJsonData[field] = '';

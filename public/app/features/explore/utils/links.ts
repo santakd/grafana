@@ -1,8 +1,17 @@
-import { splitOpen } from '../state/actions';
-import { ExploreMode, Field, LinkModel, locationUtil, TimeRange } from '@grafana/data';
-import { getLinksFromLogsField } from '../../panel/panellinks/linkSuppliers';
-import { serializeStateToUrlParam } from '../../../core/utils/explore';
-import { getDataSourceSrv } from '@grafana/runtime';
+import { useCallback } from 'react';
+import {
+  Field,
+  LinkModel,
+  TimeRange,
+  mapInternalLinkToExplore,
+  InterpolateFunction,
+  ScopedVars,
+  DataFrame,
+  getFieldDisplayValuesProxy,
+} from '@grafana/data';
+import { getTemplateSrv } from '@grafana/runtime';
+import { SplitOpen } from 'app/types/explore';
+import { getLinkSrv } from '../../panel/panellinks/link_srv';
 
 /**
  * Get links from the field of a dataframe and in addition check if there is associated
@@ -11,81 +20,103 @@ import { getDataSourceSrv } from '@grafana/runtime';
  * appropriately. This is for example used for transition from log with traceId to trace datasource to show that
  * trace.
  */
-export function getFieldLinksForExplore(
-  field: Field,
-  rowIndex: number,
-  splitOpenFn: typeof splitOpen,
-  range: TimeRange
-): Array<LinkModel<Field>> {
-  const data = getLinksFromLogsField(field, rowIndex);
-  return data.map(d => {
-    if (d.link.meta?.datasourceUid) {
-      return {
-        ...d.linkModel,
-        title:
-          d.linkModel.title ||
-          getDataSourceSrv().getDataSourceSettingsByUid(d.link.meta.datasourceUid)?.name ||
-          'Unknown datasource',
-        onClick: () => {
-          splitOpenFn({
-            datasourceUid: d.link.meta.datasourceUid,
-            // TODO: fix the ambiguity here
-            // This looks weird but in case meta.datasourceUid is set we save the query in url which will get
-            // interpolated into href
-            query: d.linkModel.href,
+export const getFieldLinksForExplore = (options: {
+  field: Field;
+  rowIndex: number;
+  splitOpenFn?: SplitOpen;
+  range: TimeRange;
+  vars?: ScopedVars;
+  dataFrame?: DataFrame;
+}): Array<LinkModel<Field>> => {
+  const { field, vars, splitOpenFn, range, rowIndex, dataFrame } = options;
+  const scopedVars: any = { ...(vars || {}) };
+  scopedVars['__value'] = {
+    value: {
+      raw: field.values.get(rowIndex),
+    },
+    text: 'Raw value',
+  };
+
+  // If we have a dataFrame we can allow referencing other columns and their values in the interpolation.
+  if (dataFrame) {
+    scopedVars['__data'] = {
+      value: {
+        name: dataFrame.name,
+        refId: dataFrame.refId,
+        fields: getFieldDisplayValuesProxy({
+          frame: dataFrame,
+          rowIndex,
+        }),
+      },
+      text: 'Data',
+    };
+  }
+
+  return field.config.links
+    ? field.config.links.map((link) => {
+        if (!link.internal) {
+          const replace: InterpolateFunction = (value, vars) =>
+            getTemplateSrv().replace(value, { ...vars, ...scopedVars });
+
+          const linkModel = getLinkSrv().getDataLinkUIModel(link, replace, field);
+          if (!linkModel.title) {
+            linkModel.title = getTitleFromHref(linkModel.href);
+          }
+          return linkModel;
+        } else {
+          return mapInternalLinkToExplore({
+            link,
+            internalLink: link.internal,
+            scopedVars: scopedVars,
+            range,
+            field,
+            onClickFn: splitOpenFn,
+            replaceVariables: getTemplateSrv().replace.bind(getTemplateSrv()),
           });
-        },
-        // We need to create real href here as the linkModel.href actually contains query. As in this case this is
-        // meant to be internal link (opens split view by default) the href will also points to explore but this
-        // way you can open it in new tab.
-        href: generateInternalHref(d.link.meta.datasourceUid, d.linkModel.href, range),
-      };
-    }
+        }
+      })
+    : [];
+};
 
-    if (!d.linkModel.title) {
-      let href = d.linkModel.href;
-      // The URL constructor needs the url to have protocol
-      if (href.indexOf('://') < 0) {
-        // Doesn't really matter what protocol we use.
-        href = `http://${href}`;
-      }
-      let title;
-      try {
-        const parsedUrl = new URL(href);
-        title = parsedUrl.hostname;
-      } catch (_e) {
-        // Should be good enough fallback, user probably did not input valid url.
-        title = href;
-      }
-
-      return {
-        ...d.linkModel,
-        title,
-      };
-    }
-    return d.linkModel;
-  });
+function getTitleFromHref(href: string): string {
+  // The URL constructor needs the url to have protocol
+  if (href.indexOf('://') < 0) {
+    // Doesn't really matter what protocol we use.
+    href = `http://${href}`;
+  }
+  let title;
+  try {
+    const parsedUrl = new URL(href);
+    title = parsedUrl.hostname;
+  } catch (_e) {
+    // Should be good enough fallback, user probably did not input valid url.
+    title = href;
+  }
+  return title;
 }
 
 /**
- * Generates href for internal derived field link.
+ * Hook that returns a function that can be used to retrieve all the links for a row. This returns all the links from
+ * all the fields so is useful for visualisation where the whole row is represented as single clickable item like a
+ * service map.
  */
-function generateInternalHref(datasourceUid: string, query: string, range: TimeRange): string {
-  return locationUtil.assureBaseUrl(
-    `/explore?left=${serializeStateToUrlParam({
-      range: range.raw,
-      datasource: getDataSourceSrv().getDataSourceSettingsByUid(datasourceUid).name,
-      // Again hardcoded for Jaeger query structure
-      // TODO: fix
-      queries: [{ query }],
-      // This should get overwritten if datasource does not support that mode and we do not know what mode is
-      // preferred anyway.
-      mode: ExploreMode.Metrics,
-      ui: {
-        showingGraph: true,
-        showingTable: true,
-        showingLogs: true,
-      },
-    })}`
+export function useLinks(range: TimeRange, splitOpenFn?: SplitOpen) {
+  return useCallback(
+    (dataFrame: DataFrame, rowIndex: number) => {
+      return dataFrame.fields.flatMap((f) => {
+        if (f.config?.links && f.config?.links.length) {
+          return getFieldLinksForExplore({
+            field: f,
+            rowIndex: rowIndex,
+            range,
+            dataFrame,
+            splitOpenFn,
+          });
+        } else {
+          return [];
+        }
+      });
+    },
+    [range, splitOpenFn]
   );
 }

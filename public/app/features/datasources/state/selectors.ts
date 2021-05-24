@@ -5,7 +5,7 @@ export const getDataSources = (state: DataSourcesState) => {
   const regex = new RegExp(state.searchQuery, 'i');
 
   return state.dataSources.filter((dataSource: DataSourceSettings) => {
-    return regex.test(dataSource.name) || regex.test(dataSource.database);
+    return regex.test(dataSource.name) || regex.test(dataSource.database) || regex.test(dataSource.type);
   });
 };
 
@@ -17,8 +17,8 @@ export const getDataSourcePlugins = (state: DataSourcesState) => {
   });
 };
 
-export const getDataSource = (state: DataSourcesState, dataSourceId: UrlQueryValue): DataSourceSettings | null => {
-  if (state.dataSource.id === parseInt(dataSourceId as string, 10)) {
+export const getDataSource = (state: DataSourcesState, dataSourceId: UrlQueryValue): DataSourceSettings => {
+  if (state.dataSource.uid === dataSourceId) {
     return state.dataSource;
   }
   return {} as DataSourceSettings;

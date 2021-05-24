@@ -1,4 +1,21 @@
+const fs = require('fs-extra');
 const path = require('path');
+
+const CopyWebpackPlugin = require('copy-webpack-plugin');
+const getBabelConfig = require('./babel.config');
+
+class CopyUniconsPlugin {
+  apply(compiler) {
+    compiler.hooks.afterEnvironment.tap('CopyUniconsPlugin', () => {
+      let destDir = path.resolve(__dirname, '../../public/img/icons/unicons');
+
+      if (!fs.pathExistsSync(destDir)) {
+        let srcDir = path.resolve(__dirname, '../../node_modules/iconscout-unicons-tarball/unicons/svg/line');
+        fs.copySync(srcDir, destDir);
+      }
+    });
+  }
+}
 
 // https://github.com/visionmedia/debug/issues/701#issuecomment-505487361
 function shouldExclude(filename) {
@@ -7,15 +24,7 @@ function shouldExclude(filename) {
     return false;
   }
 
-  const packagesToProcessbyBabel = [
-    'debug',
-    'lru-cache',
-    'yallist',
-    'apache-arrow',
-    'react-hook-form',
-    'rc-trigger',
-    '@iconscout/react-unicons',
-  ];
+  const packagesToProcessbyBabel = ['debug', 'lru-cache', 'yallist', 'react-hook-form', 'rc-trigger', 'monaco-editor'];
   for (const package of packagesToProcessbyBabel) {
     if (filename.indexOf(`node_modules/${package}`) > 0) {
       return false;
@@ -42,6 +51,12 @@ module.exports = {
       // rc-trigger uses babel-runtime which has internal dependency to core-js@2
       // this alias maps that dependency to core-js@t3
       'core-js/library/fn': 'core-js/stable',
+      // storybook v6 bump caused the app to bundle multiple versions of react breaking hooks
+      // make sure to resolve only from the project: https://github.com/facebook/react/issues/13991#issuecomment-435587809
+      react: path.resolve(__dirname, '../../node_modules/react'),
+      // some of data source pluginis use global Prism object to add the language definition
+      // we want to have same Prism object in core and in grafana/ui
+      prismjs: path.resolve(__dirname, '../../node_modules/prismjs'),
     },
     modules: [
       'node_modules',
@@ -58,6 +73,28 @@ module.exports = {
   node: {
     fs: 'empty',
   },
+  plugins: [
+    new CopyUniconsPlugin(),
+    new CopyWebpackPlugin({
+      patterns: [
+        {
+          context: path.resolve(__dirname, '../../node_modules/monaco-editor/'),
+          from: 'min/vs/**',
+          to: '../lib/monaco/', // inside the public/build folder
+          globOptions: {
+            ignore: [
+              '**/language/typescript/**', // 10mb
+              '**/*.map', // debug files
+            ],
+          },
+        },
+        {
+          from: './node_modules/@kusto/monaco-kusto/release/min/',
+          to: '../lib/monaco/min/vs/language/kusto/',
+        },
+      ],
+    }),
+  ],
   module: {
     rules: [
       /**
@@ -71,9 +108,7 @@ module.exports = {
         use: [
           {
             loader: 'babel-loader',
-            options: {
-              presets: [['@babel/preset-env']],
-            },
+            options: getBabelConfig(),
           },
         ],
       },
@@ -109,9 +144,23 @@ module.exports = {
         ],
       },
       {
+        test: /\.css$/,
+        // include: MONACO_DIR, // https://github.com/react-monaco-editor/react-monaco-editor
+        use: ['style-loader', 'css-loader'],
+      },
+      // for pre-caching SVGs as part of the JS bundles
+      {
+        test: /\.svg$/,
+        use: 'raw-loader',
+      },
+      {
         test: /\.(svg|ico|jpg|jpeg|png|gif|eot|otf|webp|ttf|woff|woff2|cur|ani|pdf)(\?.*)?$/,
         loader: 'file-loader',
         options: { name: 'static/img/[name].[hash:8].[ext]' },
+      },
+      {
+        test: /\.worker\.js$/,
+        use: { loader: 'worker-loader' },
       },
     ],
   },
@@ -123,6 +172,12 @@ module.exports = {
       chunks: 'all',
       minChunks: 1,
       cacheGroups: {
+        unicons: {
+          test: /[\\/]node_modules[\\/]@iconscout[\\/]react-unicons[\\/].*[jt]sx?$/,
+          chunks: 'initial',
+          priority: 20,
+          enforce: true,
+        },
         moment: {
           test: /[\\/]node_modules[\\/]moment[\\/].*[jt]sx?$/,
           chunks: 'initial',

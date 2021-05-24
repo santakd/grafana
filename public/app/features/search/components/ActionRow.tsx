@@ -1,5 +1,5 @@
-import React, { Dispatch, FC, FormEvent, SetStateAction } from 'react';
-import { css } from 'emotion';
+import React, { FC, FormEvent } from 'react';
+import { css } from '@emotion/css';
 import { HorizontalGroup, RadioButtonGroup, stylesFactory, useTheme, Checkbox } from '@grafana/ui';
 import { GrafanaTheme, SelectableValue } from '@grafana/data';
 import { SortPicker } from 'app/core/components/Select/SortPicker';
@@ -14,12 +14,11 @@ export const layoutOptions = [
 
 const searchSrv = new SearchSrv();
 
-type onSelectChange = (value: SelectableValue) => void;
 interface Props {
-  onLayoutChange: Dispatch<SetStateAction<string>>;
-  onSortChange: onSelectChange;
+  onLayoutChange: (layout: SearchLayout) => void;
+  onSortChange: (value: SelectableValue) => void;
   onStarredFilterChange?: (event: FormEvent<HTMLInputElement>) => void;
-  onTagFilterChange: onSelectChange;
+  onTagFilterChange: (tags: string[]) => void;
   query: DashboardQuery;
   showStarredFilter?: boolean;
   hideLayout?: boolean;
@@ -44,13 +43,13 @@ export const ActionRow: FC<Props> = ({
           {!hideLayout ? (
             <RadioButtonGroup options={layoutOptions} onChange={onLayoutChange} value={query.layout} />
           ) : null}
-          <SortPicker onChange={onSortChange} value={query.sort} />
+          <SortPicker onChange={onSortChange} value={query.sort?.value} />
         </HorizontalGroup>
       </div>
       <HorizontalGroup spacing="md" width="auto">
         {showStarredFilter && (
           <div className={styles.checkboxWrapper}>
-            <Checkbox label="Filter by starred" onChange={onStarredFilterChange} />
+            <Checkbox label="Filter by starred" onChange={onStarredFilterChange} value={query.starred} />
           </div>
         )}
         <TagFilter isClearable tags={query.tag} tagOptions={searchSrv.getDashboardTags} onChange={onTagFilterChange} />

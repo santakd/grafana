@@ -1,21 +1,12 @@
-import { getFieldLinksSupplier, getLinksFromLogsField } from './linkSuppliers';
-import {
-  applyFieldOverrides,
-  ArrayVector,
-  DataFrameView,
-  dateTime,
-  Field,
-  FieldDisplay,
-  FieldType,
-  GrafanaTheme,
-  toDataFrame,
-} from '@grafana/data';
+import { getFieldLinksSupplier } from './linkSuppliers';
+import { applyFieldOverrides, createTheme, DataFrameView, dateTime, FieldDisplay, toDataFrame } from '@grafana/data';
 import { getLinkSrv, LinkService, LinkSrv, setLinkSrv } from './link_srv';
 import { TemplateSrv } from '../../templating/template_srv';
 import { TimeSrv } from '../../dashboard/services/TimeSrv';
 
-describe('getLinksFromLogsField', () => {
+describe('getFieldLinksSupplier', () => {
   let originalLinkSrv: LinkService;
+  let templateSrv = new TemplateSrv();
   beforeAll(() => {
     // We do not need more here and TimeSrv is hard to setup fully.
     const timeSrvMock: TimeSrv = {
@@ -27,46 +18,12 @@ describe('getLinksFromLogsField', () => {
     } as any;
     const linkService = new LinkSrv(new TemplateSrv(), timeSrvMock);
     originalLinkSrv = getLinkSrv();
+
     setLinkSrv(linkService);
   });
 
   afterAll(() => {
     setLinkSrv(originalLinkSrv);
-  });
-
-  it('interpolates link from field', () => {
-    const field: Field = {
-      name: 'test field',
-      type: FieldType.number,
-      config: {
-        links: [
-          {
-            title: 'title1',
-            url: 'http://domain.com/${__value.raw}',
-          },
-          {
-            title: 'title2',
-            url: 'http://anotherdomain.sk/${__value.raw}',
-          },
-        ],
-      },
-      values: new ArrayVector([1, 2, 3]),
-    };
-    const links = getLinksFromLogsField(field, 2);
-    expect(links.length).toBe(2);
-    expect(links[0].linkModel.href).toBe('http://domain.com/3');
-    expect(links[1].linkModel.href).toBe('http://anotherdomain.sk/3');
-  });
-
-  it('handles zero links', () => {
-    const field: Field = {
-      name: 'test field',
-      type: FieldType.number,
-      config: {},
-      values: new ArrayVector([1, 2, 3]),
-    };
-    const links = getLinksFromLogsField(field, 2);
-    expect(links.length).toBe(0);
   });
 
   it('links to items on the row', () => {
@@ -135,8 +92,7 @@ describe('getLinksFromLogsField', () => {
       },
       replaceVariables: (val: string) => val,
       timeZone: 'utc',
-      theme: {} as GrafanaTheme,
-      autoMinMax: true,
+      theme: createTheme(),
     })[0];
 
     const rowIndex = 0;
@@ -153,7 +109,7 @@ describe('getLinksFromLogsField', () => {
     };
 
     const supplier = getFieldLinksSupplier(fieldDisp);
-    const links = supplier?.getLinks({}).map(m => {
+    const links = supplier?.getLinks(templateSrv.replace.bind(templateSrv)).map((m) => {
       return {
         title: m.title,
         href: m.href,

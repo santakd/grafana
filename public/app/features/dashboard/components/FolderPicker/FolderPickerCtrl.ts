@@ -1,4 +1,4 @@
-import _ from 'lodash';
+import { map, find } from 'lodash';
 import { IScope } from 'angular';
 import { AppEvents } from '@grafana/data';
 
@@ -8,9 +8,10 @@ import { backendSrv } from 'app/core/services/backend_srv';
 import { ValidationSrv } from 'app/features/manage-dashboards';
 import { ContextSrv } from 'app/core/services/context_srv';
 import { promiseToDigest } from '../../../../core/utils/promiseToDigest';
+import { createFolder } from 'app/features/manage-dashboards/state/actions';
 
 export class FolderPickerCtrl {
-  initialTitle: string;
+  declare initialTitle: string;
   initialFolderId?: number;
   labelClass: string;
   onChange: any;
@@ -18,14 +19,14 @@ export class FolderPickerCtrl {
   onCreateFolder: any;
   enterFolderCreation: any;
   exitFolderCreation: any;
-  enableCreateNew: boolean;
-  enableReset: boolean;
+  declare enableCreateNew: boolean;
+  declare enableReset: boolean;
   rootName = 'General';
   folder: any;
-  createNewFolder: boolean;
-  newFolderName: string;
-  newFolderNameTouched: boolean;
-  hasValidationError: boolean;
+  createNewFolder?: boolean;
+  newFolderName?: string;
+  newFolderNameTouched?: boolean;
+  hasValidationError?: boolean;
   validationError: any;
   isEditor: boolean;
   dashboardId?: number;
@@ -65,14 +66,14 @@ export class FolderPickerCtrl {
         }
 
         if (this.isEditor && this.enableCreateNew && query === '') {
-          result.unshift({ title: '-- New Folder --', id: -1 });
+          result.unshift({ title: '-- New folder --', id: -1 });
         }
 
         if (this.enableReset && query === '' && this.initialTitle !== '') {
           result.unshift({ title: this.initialTitle, id: null });
         }
 
-        return _.map(result, item => {
+        return map(result, (item) => {
           return { text: item.title, value: item.id };
         });
       })
@@ -111,8 +112,8 @@ export class FolderPickerCtrl {
     }
 
     return promiseToDigest(this.$scope)(
-      backendSrv.createFolder({ title: this.newFolderName }).then((result: { title: string; id: number }) => {
-        appEvents.emit(AppEvents.alertSuccess, ['Folder Created', 'OK']);
+      createFolder({ title: this.newFolderName }).then((result: { title: string; id: number }) => {
+        appEvents.emit(AppEvents.alertSuccess, ['Folder created', 'OK']);
 
         this.closeCreateFolder();
         this.folder = { text: result.title, value: result.id };
@@ -145,10 +146,11 @@ export class FolderPickerCtrl {
     const rootFolder: { text: string; value: any } = { text: this.rootName, value: 0 };
 
     this.getOptions('').then((result: any[]) => {
-      let folder: { text: string; value: any };
+      let folder: { text: string; value: any } | undefined;
+
       if (this.initialFolderId) {
         // @ts-ignore
-        folder = _.find(result, { value: this.initialFolderId });
+        folder = find(result, { value: this.initialFolderId });
       } else if (this.enableReset && this.initialTitle && this.initialFolderId === null) {
         folder = resetFolder;
       }

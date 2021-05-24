@@ -1,9 +1,8 @@
-import { PanelPlugin } from '@grafana/data';
+import { PanelPlugin, LogsSortOrder, LogsDedupStrategy, LogsDedupDescription } from '@grafana/data';
 import { Options } from './types';
 import { LogsPanel } from './LogsPanel';
-import { SortOrder } from '../../../core/utils/explore';
 
-export const plugin = new PanelPlugin<Options>(LogsPanel).setPanelOptions(builder => {
+export const plugin = new PanelPlugin<Options>(LogsPanel).setPanelOptions((builder) => {
   builder
     .addBooleanSwitch({
       path: 'showTime',
@@ -23,16 +22,48 @@ export const plugin = new PanelPlugin<Options>(LogsPanel).setPanelOptions(builde
       description: '',
       defaultValue: false,
     })
+    .addBooleanSwitch({
+      path: 'enableLogDetails',
+      name: 'Enable log details',
+      description: '',
+      defaultValue: true,
+    })
+    .addRadio({
+      path: 'dedupStrategy',
+      name: 'Deduplication',
+      description: '',
+      settings: {
+        options: [
+          { value: LogsDedupStrategy.none, label: 'None', description: LogsDedupDescription[LogsDedupStrategy.none] },
+          {
+            value: LogsDedupStrategy.exact,
+            label: 'Exact',
+            description: LogsDedupDescription[LogsDedupStrategy.exact],
+          },
+          {
+            value: LogsDedupStrategy.numbers,
+            label: 'Numbers',
+            description: LogsDedupDescription[LogsDedupStrategy.numbers],
+          },
+          {
+            value: LogsDedupStrategy.signature,
+            label: 'Signature',
+            description: LogsDedupDescription[LogsDedupStrategy.signature],
+          },
+        ],
+      },
+      defaultValue: LogsDedupStrategy.none,
+    })
     .addRadio({
       path: 'sortOrder',
       name: 'Order',
       description: '',
       settings: {
         options: [
-          { value: SortOrder.Descending, label: 'Descending' },
-          { value: SortOrder.Ascending, label: 'Ascending' },
+          { value: LogsSortOrder.Descending, label: 'Descending' },
+          { value: LogsSortOrder.Ascending, label: 'Ascending' },
         ],
       },
-      defaultValue: SortOrder.Descending,
+      defaultValue: LogsSortOrder.Descending,
     });
 });

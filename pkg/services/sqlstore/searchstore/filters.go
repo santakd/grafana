@@ -2,8 +2,9 @@ package searchstore
 
 import (
 	"fmt"
-	"github.com/grafana/grafana/pkg/services/sqlstore/migrator"
 	"strings"
+
+	"github.com/grafana/grafana/pkg/services/sqlstore/migrator"
 )
 
 // FilterWhere limits the set of dashboard IDs to the dashboards for
@@ -30,6 +31,10 @@ type FilterOrderBy interface {
 // dashboard column.
 type FilterLeftJoin interface {
 	LeftJoin() string
+}
+
+type FilterSelect interface {
+	Select() string
 }
 
 const (

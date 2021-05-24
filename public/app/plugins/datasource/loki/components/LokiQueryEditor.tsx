@@ -1,45 +1,69 @@
 // Libraries
-import React, { memo } from 'react';
+import React from 'react';
 
 // Types
-import { AbsoluteTimeRange, QueryEditorProps } from '@grafana/data';
-import { LokiDatasource } from '../datasource';
-import { LokiQuery } from '../types';
+import { InlineFormLabel } from '@grafana/ui';
 import { LokiQueryField } from './LokiQueryField';
+import { LokiOptionFields } from './LokiOptionFields';
+import { LokiQueryEditorProps } from './types';
 
-type Props = QueryEditorProps<LokiDatasource, LokiQuery>;
-
-export const LokiQueryEditor = memo(function LokiQueryEditor(props: Props) {
+export function LokiQueryEditor(props: LokiQueryEditorProps) {
   const { query, data, datasource, onChange, onRunQuery } = props;
 
-  let absolute: AbsoluteTimeRange;
+  const onLegendChange = (e: React.SyntheticEvent<HTMLInputElement>) => {
+    const nextQuery = { ...query, legendFormat: e.currentTarget.value };
+    onChange(nextQuery);
+  };
 
-  if (data && data.request) {
-    const { range } = data.request;
-    absolute = {
-      from: range.from.valueOf(),
-      to: range.to.valueOf(),
-    };
-  } else {
-    absolute = {
-      from: Date.now() - 10000,
-      to: Date.now(),
-    };
-  }
-
-  return (
-    <div>
-      <LokiQueryField
-        datasource={datasource}
-        query={query}
-        onChange={onChange}
-        onRunQuery={onRunQuery}
-        history={[]}
-        data={data}
-        absoluteRange={absolute}
-      />
+  const legendField = (
+    <div className="gf-form-inline">
+      <div className="gf-form">
+        <InlineFormLabel
+          width={6}
+          tooltip="Controls the name of the time series, using name or pattern. For example
+        {{hostname}} will be replaced with label value for the label hostname. The legend only applies to metric queries."
+        >
+          Legend
+        </InlineFormLabel>
+        <input
+          type="text"
+          className="gf-form-input"
+          placeholder="legend format"
+          value={query.legendFormat || ''}
+          onChange={onLegendChange}
+          onBlur={onRunQuery}
+        />
+      </div>
     </div>
   );
-});
 
-export default LokiQueryEditor;
+  return (
+    <LokiQueryField
+      datasource={datasource}
+      query={query}
+      onChange={onChange}
+      onRunQuery={onRunQuery}
+      onBlur={onRunQuery}
+      history={[]}
+      data={data}
+      data-testid={testIds.editor}
+      ExtraFieldElement={
+        <>
+          <LokiOptionFields
+            queryType={query.instant ? 'instant' : 'range'}
+            lineLimitValue={query?.maxLines?.toString() || ''}
+            query={query}
+            onRunQuery={onRunQuery}
+            onChange={onChange}
+            runOnBlur={true}
+          />
+          {legendField}
+        </>
+      }
+    />
+  );
+}
+
+export const testIds = {
+  editor: 'loki-editor',
+};

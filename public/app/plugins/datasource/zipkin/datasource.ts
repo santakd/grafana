@@ -1,25 +1,24 @@
 import {
-  MutableDataFrame,
-  DataSourceApi,
-  DataSourceInstanceSettings,
+  DataQuery,
   DataQueryRequest,
   DataQueryResponse,
-  DataQuery,
+  DataSourceApi,
+  DataSourceInstanceSettings,
   FieldType,
+  MutableDataFrame,
 } from '@grafana/data';
-import { from, Observable, of } from 'rxjs';
-import { DatasourceRequestOptions } from '../../../core/services/backend_srv';
-import { serializeParams } from '../../../core/utils/fetch';
-import { getBackendSrv } from '@grafana/runtime';
+import { BackendSrvRequest, FetchResponse, getBackendSrv } from '@grafana/runtime';
+import { Observable, of } from 'rxjs';
 import { map } from 'rxjs/operators';
+import { serializeParams } from '../../../core/utils/fetch';
 import { apiPrefix } from './constants';
 import { ZipkinSpan } from './types';
 import { transformResponse } from './utils/transforms';
+import { createGraphFrames } from './utils/graphTransform';
 
-export type ZipkinQuery = {
-  // At the moment this should be simply the trace ID to get
+export interface ZipkinQuery extends DataQuery {
   query: string;
-} & DataQuery;
+}
 
 export class ZipkinDatasource extends DataSourceApi<ZipkinQuery> {
   constructor(private instanceSettings: DataSourceInstanceSettings) {
@@ -29,55 +28,47 @@ export class ZipkinDatasource extends DataSourceApi<ZipkinQuery> {
   query(options: DataQueryRequest<ZipkinQuery>): Observable<DataQueryResponse> {
     const traceId = options.targets[0]?.query;
     if (traceId) {
-      return this.request<ZipkinSpan[]>(`${apiPrefix}/trace/${traceId}`).pipe(map(responseToDataQueryResponse));
+      return this.request<ZipkinSpan[]>(`${apiPrefix}/trace/${encodeURIComponent(traceId)}`).pipe(
+        map(responseToDataQueryResponse)
+      );
     } else {
       return of(emptyDataQueryResponse);
     }
   }
 
   async metadataRequest(url: string, params?: Record<string, any>): Promise<any> {
-    const res = await this.request(url, params, { silent: true }).toPromise();
+    const res = await this.request(url, params, { hideFromInspector: true }).toPromise();
     return res.data;
   }
 
-  async testDatasource(): Promise<any> {
+  async testDatasource(): Promise<{ status: string; message: string }> {
     await this.metadataRequest(`${apiPrefix}/services`);
-    return true;
+    return { status: 'success', message: 'Data source is working' };
   }
 
-  getQueryDisplayText(query: ZipkinQuery) {
+  getQueryDisplayText(query: ZipkinQuery): string {
     return query.query;
   }
 
-  private request<T = any>(apiUrl: string, data?: any, options?: DatasourceRequestOptions): Observable<{ data: T }> {
-    // Hack for proxying metadata requests
-    const baseUrl = `/api/datasources/proxy/${this.instanceSettings.id}`;
+  private request<T = any>(
+    apiUrl: string,
+    data?: any,
+    options?: Partial<BackendSrvRequest>
+  ): Observable<FetchResponse<T>> {
     const params = data ? serializeParams(data) : '';
-    const url = `${baseUrl}${apiUrl}${params.length ? `?${params}` : ''}`;
+    const url = `${this.instanceSettings.url}${apiUrl}${params.length ? `?${params}` : ''}`;
     const req = {
       ...options,
       url,
     };
 
-    return from(getBackendSrv().datasourceRequest(req));
+    return getBackendSrv().fetch<T>(req);
   }
 }
 
 function responseToDataQueryResponse(response: { data: ZipkinSpan[] }): DataQueryResponse {
   return {
-    data: [
-      new MutableDataFrame({
-        fields: [
-          {
-            name: 'trace',
-            type: FieldType.trace,
-            // There is probably better mapping than just putting everything in as a single value but that's how
-            // we do it with jaeger and is the simplest right now.
-            values: response?.data ? [transformResponse(response?.data)] : [],
-          },
-        ],
-      }),
-    ],
+    data: response?.data ? [transformResponse(response?.data), ...createGraphFrames(response?.data)] : [],
   };
 }
 
@@ -91,6 +82,9 @@ const emptyDataQueryResponse = {
           values: [],
         },
       ],
+      meta: {
+        preferredVisualisationType: 'trace',
+      },
     }),
   ],
 };

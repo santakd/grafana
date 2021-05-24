@@ -1,50 +1,107 @@
-import React from 'react';
+import React, { ChangeEvent } from 'react';
 import {
+  Alert,
   Button,
   Container,
   CustomScrollbar,
-  FeatureInfoBox,
-  stylesFactory,
-  useTheme,
-  ValuePicker,
+  Themeable,
   VerticalGroup,
+  withTheme,
+  Input,
+  IconButton,
+  useStyles2,
 } from '@grafana/ui';
 import {
+  DataFrame,
   DataTransformerConfig,
-  FeatureState,
-  GrafanaTheme,
+  DocsId,
+  GrafanaTheme2,
+  PanelData,
   SelectableValue,
   standardTransformersRegistry,
-  transformDataFrame,
-  DataFrame,
-  PanelData,
 } from '@grafana/data';
-import { TransformationOperationRow } from './TransformationOperationRow';
 import { Card, CardProps } from '../../../../core/components/Card/Card';
-import { css } from 'emotion';
+import { css } from '@emotion/css';
 import { selectors } from '@grafana/e2e-selectors';
 import { Unsubscribable } from 'rxjs';
 import { PanelModel } from '../../state';
+import { getDocsLink } from 'app/core/utils/docsLinks';
+import { DragDropContext, Droppable, DropResult } from 'react-beautiful-dnd';
+import { TransformationOperationRows } from './TransformationOperationRows';
+import { TransformationsEditorTransformation } from './types';
+import { PanelNotSupported } from '../PanelEditor/PanelNotSupported';
+import { AppNotificationSeverity } from '../../../../types';
+import { LocalStorageValueProvider } from 'app/core/components/LocalStorageValueProvider';
 
-interface Props {
+const LOCAL_STORAGE_KEY = 'dashboard.components.TransformationEditor.featureInfoBox.isDismissed';
+
+interface TransformationsEditorProps extends Themeable {
   panel: PanelModel;
 }
 
 interface State {
   data: DataFrame[];
-  transformations: DataTransformerConfig[];
+  transformations: TransformationsEditorTransformation[];
+  search: string;
+  showPicker?: boolean;
 }
 
-export class TransformationsEditor extends React.PureComponent<Props, State> {
+class UnThemedTransformationsEditor extends React.PureComponent<TransformationsEditorProps, State> {
   subscription?: Unsubscribable;
 
-  constructor(props: Props) {
+  constructor(props: TransformationsEditorProps) {
     super(props);
+    const transformations = props.panel.transformations || [];
 
+    const ids = this.buildTransformationIds(transformations);
     this.state = {
-      transformations: props.panel.transformations || [],
+      transformations: transformations.map((t, i) => ({
+        transformation: t,
+        id: ids[i],
+      })),
       data: [],
+      search: '',
     };
+  }
+
+  onSearchChange = (event: ChangeEvent<HTMLInputElement>) => {
+    this.setState({ search: event.target.value });
+  };
+
+  onSearchKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === 'Enter') {
+      const { search } = this.state;
+      if (search) {
+        const lower = search.toLowerCase();
+        const filtered = standardTransformersRegistry.list().filter((t) => {
+          const txt = (t.name + t.description).toLowerCase();
+          return txt.indexOf(lower) >= 0;
+        });
+        if (filtered.length > 0) {
+          this.onTransformationAdd({ value: filtered[0].id });
+        }
+      }
+    } else if (event.keyCode === 27) {
+      // Escape key
+      this.setState({ search: '', showPicker: false });
+      event.stopPropagation(); // don't exit the editor
+    }
+  };
+
+  buildTransformationIds(transformations: DataTransformerConfig[]) {
+    const transformationCounters: Record<string, number> = {};
+    const transformationIds: string[] = [];
+
+    for (let i = 0; i < transformations.length; i++) {
+      const transformation = transformations[i];
+      if (transformationCounters[transformation.id] === undefined) {
+        transformationCounters[transformation.id] = 0;
+      } else {
+        transformationCounters[transformation.id] += 1;
+      }
+      transformationIds.push(`${transformations[i].id}-${transformationCounters[transformations[i].id]}`);
+    }
+    return transformationIds;
   }
 
   componentDidMount() {
@@ -62,19 +119,38 @@ export class TransformationsEditor extends React.PureComponent<Props, State> {
     }
   }
 
-  onChange(transformations: DataTransformerConfig[]) {
-    this.props.panel.setTransformations(transformations);
+  onChange(transformations: TransformationsEditorTransformation[]) {
     this.setState({ transformations });
+    this.props.panel.setTransformations(transformations.map((t) => t.transformation));
   }
+
+  // Transformation UIDs are stored in a name-X form. name is NOT unique hence we need to parse the IDs and increase X
+  // for transformations with the same name
+  getTransformationNextId = (name: string) => {
+    const { transformations } = this.state;
+    let nextId = 0;
+    const existingIds = transformations.filter((t) => t.id.startsWith(name)).map((t) => t.id);
+
+    if (existingIds.length !== 0) {
+      nextId = Math.max(...existingIds.map((i) => parseInt(i.match(/\d+/)![0], 10))) + 1;
+    }
+
+    return `${name}-${nextId}`;
+  };
 
   onTransformationAdd = (selectable: SelectableValue<string>) => {
     const { transformations } = this.state;
 
+    const nextId = this.getTransformationNextId(selectable.value!);
+    this.setState({ search: '', showPicker: false });
     this.onChange([
       ...transformations,
       {
-        id: selectable.value as string,
-        options: {},
+        id: nextId,
+        transformation: {
+          id: selectable.value as string,
+          options: {},
+        },
       },
     ]);
   };
@@ -82,7 +158,7 @@ export class TransformationsEditor extends React.PureComponent<Props, State> {
   onTransformationChange = (idx: number, config: DataTransformerConfig) => {
     const { transformations } = this.state;
     const next = Array.from(transformations);
-    next[idx] = config;
+    next[idx].transformation = config;
     this.onChange(next);
   };
 
@@ -93,130 +169,193 @@ export class TransformationsEditor extends React.PureComponent<Props, State> {
     this.onChange(next);
   };
 
-  renderTransformationSelector = () => {
-    const availableTransformers = standardTransformersRegistry.list().map(t => {
-      return {
-        value: t.transformation.id,
-        label: t.name,
-        description: t.description,
-      };
-    });
+  onDragEnd = (result: DropResult) => {
+    const { transformations } = this.state;
 
-    return (
-      <div
-        className={css`
-          max-width: 66%;
-        `}
-      >
-        <ValuePicker
-          size="md"
-          variant="secondary"
-          label="Add transformation"
-          options={availableTransformers}
-          onChange={this.onTransformationAdd}
-          isFullWidth={false}
-          menuPlacement="bottom"
-        />
-      </div>
-    );
+    if (!result || !result.destination) {
+      return;
+    }
+
+    const startIndex = result.source.index;
+    const endIndex = result.destination.index;
+    if (startIndex === endIndex) {
+      return;
+    }
+    const update = Array.from(transformations);
+    const [removed] = update.splice(startIndex, 1);
+    update.splice(endIndex, 0, removed);
+    this.onChange(update);
   };
 
   renderTransformationEditors = () => {
     const { data, transformations } = this.state;
 
     return (
-      <>
-        {transformations.map((t, i) => {
-          let editor;
-
-          const transformationUI = standardTransformersRegistry.getIfExists(t.id);
-          if (!transformationUI) {
-            return null;
-          }
-
-          const input = transformDataFrame(transformations.slice(0, i), data);
-          const output = transformDataFrame(transformations.slice(i), input);
-
-          if (transformationUI) {
-            editor = React.createElement(transformationUI.editor, {
-              options: { ...transformationUI.transformation.defaultOptions, ...t.options },
-              input,
-              onChange: (options: any) => {
-                this.onTransformationChange(i, {
-                  id: t.id,
-                  options,
-                });
-              },
-            });
-          }
-
-          return (
-            <TransformationOperationRow
-              key={`${t.id}-${i}`}
-              input={input || []}
-              output={output || []}
-              onRemove={() => this.onTransformationRemove(i)}
-              editor={editor}
-              name={transformationUI ? transformationUI.name : ''}
-              description={transformationUI ? transformationUI.description : ''}
-            />
-          );
-        })}
-      </>
+      <DragDropContext onDragEnd={this.onDragEnd}>
+        <Droppable droppableId="transformations-list" direction="vertical">
+          {(provided) => {
+            return (
+              <div ref={provided.innerRef} {...provided.droppableProps}>
+                <TransformationOperationRows
+                  configs={transformations}
+                  data={data}
+                  onRemove={this.onTransformationRemove}
+                  onChange={this.onTransformationChange}
+                />
+                {provided.placeholder}
+              </div>
+            );
+          }}
+        </Droppable>
+      </DragDropContext>
     );
   };
 
-  renderNoAddedTransformsState() {
+  renderTransformsPicker() {
+    const { transformations, search } = this.state;
+    let suffix: React.ReactNode = null;
+    let xforms = standardTransformersRegistry.list();
+    if (search) {
+      const lower = search.toLowerCase();
+      const filtered = xforms.filter((t) => {
+        const txt = (t.name + t.description).toLowerCase();
+        return txt.indexOf(lower) >= 0;
+      });
+      suffix = (
+        <>
+          {filtered.length} / {xforms.length} &nbsp;&nbsp;
+          <IconButton
+            name="times"
+            surface="header"
+            onClick={() => {
+              this.setState({ search: '' });
+            }}
+          />
+        </>
+      );
+
+      xforms = filtered;
+    }
+
+    const noTransforms = !transformations?.length;
+    const showPicker = noTransforms || this.state.showPicker;
+    if (!suffix && showPicker && !noTransforms) {
+      suffix = (
+        <IconButton
+          name="times"
+          surface="header"
+          onClick={() => {
+            this.setState({ showPicker: false });
+          }}
+        />
+      );
+    }
+
     return (
-      <VerticalGroup spacing={'lg'}>
-        <Container grow={1}>
-          <FeatureInfoBox
-            title="Transformations"
-            featureState={FeatureState.beta}
-            // url={getDocsLink(DocsId.Transformations)}
+      <>
+        {noTransforms && (
+          <Container grow={1}>
+            <LocalStorageValueProvider<boolean> storageKey={LOCAL_STORAGE_KEY} defaultValue={false}>
+              {(isDismissed, onDismiss) => {
+                if (isDismissed) {
+                  return null;
+                }
+
+                return (
+                  <Alert
+                    title="Transformations"
+                    onRemove={() => {
+                      onDismiss(true);
+                    }}
+                    severity="info"
+                  >
+                    <p>
+                      Transformations allow you to join, calculate, re-order, hide, and rename your query results before
+                      they are visualized. <br />
+                      Many transforms are not suitable if you&apos;re using the Graph visualization, as it currently
+                      only only supports time series data. <br />
+                      It can help to switch to the Table visualization to understand what a transformation is doing.{' '}
+                    </p>
+                    <a
+                      href={getDocsLink(DocsId.Transformations)}
+                      className="external-link"
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      Read more
+                    </a>
+                  </Alert>
+                );
+              }}
+            </LocalStorageValueProvider>
+          </Container>
+        )}
+        {showPicker ? (
+          <VerticalGroup>
+            <Input
+              aria-label={selectors.components.Transforms.searchInput}
+              value={search ?? ''}
+              autoFocus={!noTransforms}
+              placeholder="Add transformation"
+              onChange={this.onSearchChange}
+              onKeyDown={this.onSearchKeyDown}
+              suffix={suffix}
+            />
+
+            {xforms.map((t) => {
+              return (
+                <TransformationCard
+                  key={t.name}
+                  title={t.name}
+                  description={t.description}
+                  actions={<Button>Select</Button>}
+                  ariaLabel={selectors.components.TransformTab.newTransform(t.name)}
+                  onClick={() => {
+                    this.onTransformationAdd({ value: t.id });
+                  }}
+                />
+              );
+            })}
+          </VerticalGroup>
+        ) : (
+          <Button
+            icon="plus"
+            variant="secondary"
+            onClick={() => {
+              this.setState({ showPicker: true });
+            }}
           >
-            <p>
-              Transformations allow you to join, calculate, re-order, hide and rename your query results before being
-              visualized. <br />
-              Many transforms are not suitable if you're using the Graph visualization as it currently only supports
-              time series. <br />
-              It can help to switch to Table visualization to understand what a transformation is doing. <br />
-            </p>
-            <p>Select one of the transformations below to start.</p>
-          </FeatureInfoBox>
-        </Container>
-        <VerticalGroup>
-          {standardTransformersRegistry.list().map(t => {
-            return (
-              <TransformationCard
-                key={t.name}
-                title={t.name}
-                description={t.description}
-                actions={<Button>Select</Button>}
-                ariaLabel={selectors.components.TransformTab.newTransform(t.name)}
-                onClick={() => {
-                  this.onTransformationAdd({ value: t.id });
-                }}
-              />
-            );
-          })}
-        </VerticalGroup>
-      </VerticalGroup>
+            Add transformation
+          </Button>
+        )}
+      </>
     );
   }
 
   render() {
+    const {
+      panel: { alert },
+    } = this.props;
     const { transformations } = this.state;
 
     const hasTransforms = transformations.length > 0;
+
+    if (!hasTransforms && alert) {
+      return <PanelNotSupported message="Transformations can't be used on a panel with existing alerts" />;
+    }
 
     return (
       <CustomScrollbar autoHeightMin="100%">
         <Container padding="md">
           <div aria-label={selectors.components.TransformTab.content}>
-            {!hasTransforms && this.renderNoAddedTransformsState()}
+            {hasTransforms && alert ? (
+              <Alert
+                severity={AppNotificationSeverity.Error}
+                title="Transformations can't be used on a panel with alerts"
+              />
+            ) : null}
             {hasTransforms && this.renderTransformationEditors()}
-            {hasTransforms && this.renderTransformationSelector()}
+            {this.renderTransformsPicker()}
           </div>
         </Container>
       </CustomScrollbar>
@@ -224,19 +363,18 @@ export class TransformationsEditor extends React.PureComponent<Props, State> {
   }
 }
 
-const TransformationCard: React.FC<CardProps> = props => {
-  const theme = useTheme();
-  const styles = getTransformationCardStyles(theme);
+const TransformationCard: React.FC<CardProps> = (props) => {
+  const styles = useStyles2(getStyles);
   return <Card {...props} className={styles.card} />;
 };
 
-const getTransformationCardStyles = stylesFactory((theme: GrafanaTheme) => {
+const getStyles = (theme: GrafanaTheme2) => {
   return {
     card: css`
-      background: ${theme.colors.bg2};
+      background: ${theme.colors.background.secondary};
       width: 100%;
       border: none;
-      padding: ${theme.spacing.sm};
+      padding: ${theme.spacing(1)};
 
       // hack because these cards use classes from a very different card for some reason
       .add-data-source-item-text {
@@ -244,10 +382,12 @@ const getTransformationCardStyles = stylesFactory((theme: GrafanaTheme) => {
       }
 
       &:hover {
-        background: ${theme.colors.bg3};
+        background: ${theme.colors.action.hover};
         box-shadow: none;
         border: none;
       }
     `,
   };
-});
+};
+
+export const TransformationsEditor = withTheme(UnThemedTransformationsEditor);

@@ -19,7 +19,10 @@ import SpanBarRow from './SpanBarRow';
 import SpanTreeOffset from './SpanTreeOffset';
 import ReferencesButton from './ReferencesButton';
 
-jest.mock('./SpanTreeOffset');
+jest.mock('./SpanTreeOffset', () => {
+  // eslint-disable-next-line react/display-name
+  return () => <span>SpanTreeOffset</span>;
+});
 
 describe('<SpanBarRow>', () => {
   const spanID = 'some-id';
@@ -59,7 +62,6 @@ describe('<SpanBarRow>', () => {
   beforeEach(() => {
     props.onDetailToggled.mockReset();
     props.onChildrenToggled.mockReset();
-    SpanTreeOffset.mockReturnValue(() => {});
     wrapper = mount(<SpanBarRow {...props} />);
   });
 
@@ -106,7 +108,10 @@ describe('<SpanBarRow>', () => {
       props.span
     );
 
-    const spanRow = shallow(<SpanBarRow {...props} span={span} />).dive().dive().dive();
+    const spanRow = shallow(<SpanBarRow {...props} span={span} />)
+      .dive()
+      .dive()
+      .dive();
     const refButton = spanRow.find(ReferencesButton);
     expect(refButton.length).toEqual(1);
     expect(refButton.at(0).props().tooltipText).toEqual('Contains multiple references');
@@ -128,7 +133,10 @@ describe('<SpanBarRow>', () => {
       },
       props.span
     );
-    const spanRow = shallow(<SpanBarRow {...props} span={span} />).dive().dive().dive();
+    const spanRow = shallow(<SpanBarRow {...props} span={span} />)
+      .dive()
+      .dive()
+      .dive();
     const refButton = spanRow.find(ReferencesButton);
     expect(refButton.length).toEqual(1);
     expect(refButton.at(0).props().tooltipText).toEqual('This span is referenced by another span');
@@ -158,7 +166,10 @@ describe('<SpanBarRow>', () => {
       },
       props.span
     );
-    const spanRow = shallow(<SpanBarRow {...props} span={span} />).dive().dive().dive();
+    const spanRow = shallow(<SpanBarRow {...props} span={span} />)
+      .dive()
+      .dive()
+      .dive();
     const refButton = spanRow.find(ReferencesButton);
     expect(refButton.length).toEqual(1);
     expect(refButton.at(0).props().tooltipText).toEqual('This span is referenced by multiple other spans');

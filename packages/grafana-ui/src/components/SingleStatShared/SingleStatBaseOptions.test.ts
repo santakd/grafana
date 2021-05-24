@@ -17,7 +17,7 @@ describe('sharedSingleStatMigrationHandler', () => {
           {
             color: 'green',
             index: 0,
-            value: null,
+            value: -Infinity,
           },
           {
             color: 'orange',
@@ -198,6 +198,18 @@ describe('sharedSingleStatMigrationHandler', () => {
     expect(panel.fieldConfig.defaults.max).toBe(undefined);
   });
 
+  it('change from angular singlestat with tableColumn set', () => {
+    const old: any = {
+      angular: {
+        tableColumn: 'info',
+      },
+    };
+    const panel = {} as PanelModel;
+    const newOptions = sharedSingleStatPanelChangedHandler(panel, 'singlestat', old);
+    expect(newOptions.reduceOptions.calcs).toEqual(['mean']);
+    expect(newOptions.reduceOptions.fields).toBe('/^info$/');
+  });
+
   it('change from angular singlestat with no enabled gauge', () => {
     const old: any = {
       angular: {
@@ -216,5 +228,23 @@ describe('sharedSingleStatMigrationHandler', () => {
     expect(panel.fieldConfig.defaults.unit).toBe('ms');
     expect(panel.fieldConfig.defaults.min).toBe(undefined);
     expect(panel.fieldConfig.defaults.max).toBe(undefined);
+  });
+
+  it('auto set min/max for percent units before 8.0', () => {
+    const panel = ({
+      options: {
+        fieldOptions: {
+          defaults: {
+            unit: 'percentunit',
+          },
+        },
+      },
+      title: 'Usage',
+      type: 'bargauge',
+    } as unknown) as PanelModel;
+    sharedSingleStatMigrationHandler(panel as any);
+    expect(panel.fieldConfig.defaults.unit).toBe('percentunit');
+    expect(panel.fieldConfig.defaults.min).toBe(0);
+    expect(panel.fieldConfig.defaults.max).toBe(1);
   });
 });

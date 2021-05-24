@@ -1,27 +1,27 @@
-import React, { useState } from 'react';
-import { css } from 'emotion';
+import React, { useState, useEffect } from 'react';
+import { css } from '@emotion/css';
 import { uniqBy } from 'lodash';
 
 // Types
 import { RichHistoryQuery, ExploreId } from 'app/types/explore';
 
 // Utils
-import { stylesFactory, useTheme } from '@grafana/ui';
+import { stylesFactory, useTheme, RangeSlider, Select } from '@grafana/ui';
 import { GrafanaTheme, SelectableValue } from '@grafana/data';
 
-import { SortOrder } from 'app/core/utils/explore';
 import {
-  sortQueries,
+  SortOrder,
   mapNumbertoTimeInSlider,
-  createRetentionPeriodBoundary,
   mapQueriesToHeadings,
   createDatasourcesList,
+  filterAndSortQueries,
 } from 'app/core/utils/richHistory';
 
 // Components
 import RichHistoryCard from './RichHistoryCard';
 import { sortOrderOptions } from './RichHistory';
-import { Slider, Select } from '@grafana/ui';
+import { FilterInput } from 'app/core/components/FilterInput/FilterInput';
+import { useDebounce } from 'react-use';
 
 export interface Props {
   queries: RichHistoryQuery[];
@@ -32,7 +32,7 @@ export interface Props {
   exploreId: ExploreId;
   height: number;
   onChangeSortOrder: (sortOrder: SortOrder) => void;
-  onSelectDatasourceFilters: (value: SelectableValue[] | null) => void;
+  onSelectDatasourceFilters: (value: SelectableValue[]) => void;
 }
 
 const getStyles = stylesFactory((theme: GrafanaTheme, height: number) => {
@@ -74,9 +74,14 @@ const getStyles = stylesFactory((theme: GrafanaTheme, height: number) => {
     selectors: css`
       display: flex;
       justify-content: space-between;
+      flex-wrap: wrap;
+    `,
+    filterInput: css`
+      margin-bottom: ${theme.spacing.sm};
     `,
     multiselect: css`
-      width: 60%;
+      width: 100%;
+      margin-bottom: ${theme.spacing.sm};
       .gf-form-select-box__multi-value {
         background-color: ${bgColor};
         padding: ${theme.spacing.xxs} ${theme.spacing.xs} ${theme.spacing.xxs} ${theme.spacing.sm};
@@ -132,50 +137,61 @@ export function RichHistoryQueriesTab(props: Props) {
     height,
   } = props;
 
-  const [sliderRetentionFilter, setSliderRetentionFilter] = useState<[number, number]>([0, retentionPeriod]);
+  const [timeFilter, setTimeFilter] = useState<[number, number]>([0, retentionPeriod]);
+  const [filteredQueries, setFilteredQueries] = useState<RichHistoryQuery[]>([]);
+  const [searchInput, setSearchInput] = useState('');
+  const [debouncedSearchInput, setDebouncedSearchInput] = useState('');
 
   const theme = useTheme();
   const styles = getStyles(theme, height);
-  const datasourcesRetrievedFromQueryHistory = uniqBy(queries, 'datasourceName').map(d => d.datasourceName);
+
+  const datasourcesRetrievedFromQueryHistory = uniqBy(queries, 'datasourceName').map((d) => d.datasourceName);
   const listOfDatasources = createDatasourcesList(datasourcesRetrievedFromQueryHistory);
 
-  const listOfDatasourceFilters = datasourceFilters?.map(d => d.value);
-  const filteredQueriesByDatasource =
-    listOfDatasourceFilters && listOfDatasourceFilters?.length > 0
-      ? queries?.filter(q => listOfDatasourceFilters?.includes(q.datasourceName))
-      : queries;
-
-  const sortedQueries = sortQueries(filteredQueriesByDatasource, sortOrder);
-  const queriesWithinSelectedTimeline = sortedQueries?.filter(
-    q =>
-      q.ts < createRetentionPeriodBoundary(sliderRetentionFilter[0], true) &&
-      q.ts > createRetentionPeriodBoundary(sliderRetentionFilter[1], false)
+  useDebounce(
+    () => {
+      setDebouncedSearchInput(searchInput);
+    },
+    300,
+    [searchInput]
   );
+
+  useEffect(() => {
+    setFilteredQueries(
+      filterAndSortQueries(
+        queries,
+        sortOrder,
+        datasourceFilters?.map((d) => d.value) as string[] | null,
+        debouncedSearchInput,
+        timeFilter
+      )
+    );
+  }, [timeFilter, queries, sortOrder, datasourceFilters, debouncedSearchInput]);
 
   /* mappedQueriesToHeadings is an object where query headings (stringified dates/data sources)
    * are keys and arrays with queries that belong to that headings are values.
    */
-  let mappedQueriesToHeadings = mapQueriesToHeadings(queriesWithinSelectedTimeline, sortOrder);
+  const mappedQueriesToHeadings = mapQueriesToHeadings(filteredQueries, sortOrder);
 
   return (
     <div className={styles.container}>
       <div className={styles.containerSlider}>
         <div className={styles.slider}>
           <div className="label-slider">Filter history</div>
-          <div className="label-slider">{mapNumbertoTimeInSlider(sliderRetentionFilter[0])}</div>
+          <div className="label-slider">{mapNumbertoTimeInSlider(timeFilter[0])}</div>
           <div className="slider">
-            <Slider
+            <RangeSlider
               tooltipAlwaysVisible={false}
               min={0}
               max={retentionPeriod}
-              value={sliderRetentionFilter}
+              value={timeFilter}
               orientation="vertical"
               formatTooltipResult={mapNumbertoTimeInSlider}
               reverse={true}
-              onAfterChange={setSliderRetentionFilter as () => number[]}
+              onAfterChange={setTimeFilter as () => number[]}
             />
           </div>
-          <div className="label-slider">{mapNumbertoTimeInSlider(sliderRetentionFilter[1])}</div>
+          <div className="label-slider">{mapNumbertoTimeInSlider(timeFilter[1])}</div>
         </div>
       </div>
 
@@ -187,28 +203,37 @@ export function RichHistoryQueriesTab(props: Props) {
                 isMulti={true}
                 options={listOfDatasources}
                 value={datasourceFilters}
-                placeholder="Filter queries for specific data sources(s)"
+                placeholder="Filter queries for data sources(s)"
                 onChange={onSelectDatasourceFilters}
               />
             </div>
           )}
+          <div className={styles.filterInput}>
+            <FilterInput
+              placeholder="Search queries"
+              value={searchInput}
+              onChange={(value: string) => {
+                setSearchInput(value);
+              }}
+            />
+          </div>
           <div aria-label="Sort queries" className={styles.sort}>
             <Select
-              value={sortOrderOptions.filter(order => order.value === sortOrder)}
+              value={sortOrderOptions.filter((order) => order.value === sortOrder)}
               options={sortOrderOptions}
               placeholder="Sort queries by"
-              onChange={e => onChangeSortOrder(e.value as SortOrder)}
+              onChange={(e) => onChangeSortOrder(e.value as SortOrder)}
             />
           </div>
         </div>
-        {Object.keys(mappedQueriesToHeadings).map(heading => {
+        {Object.keys(mappedQueriesToHeadings).map((heading) => {
           return (
             <div key={heading}>
               <div className={styles.heading}>
                 {heading} <span className={styles.queries}>{mappedQueriesToHeadings[heading].length} queries</span>
               </div>
               {mappedQueriesToHeadings[heading].map((q: RichHistoryQuery) => {
-                const idx = listOfDatasources.findIndex(d => d.label === q.datasourceName);
+                const idx = listOfDatasources.findIndex((d) => d.label === q.datasourceName);
                 return (
                   <RichHistoryCard
                     query={q}

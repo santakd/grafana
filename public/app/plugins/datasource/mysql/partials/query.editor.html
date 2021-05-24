@@ -132,10 +132,6 @@
     </div>
   </div>
 
-  <div class="gf-form" ng-show="ctrl.showLastQuerySQL">
-    <pre class="gf-form-pre">{{ctrl.lastQueryMeta.sql}}</pre>
-  </div>
-
   <div class="gf-form"  ng-show="ctrl.showHelp">
     <pre class="gf-form-pre alert alert-info">Time series:
 - return column named time or time_sec (in UTC), as a unix time stamp or any sql native date data type. You can use the macros below.
@@ -181,6 +177,10 @@ Or build your own conditionals using these macros which just return the values:
     </pre>
   </div>
 
+  </div>
+
+  <div class="gf-form" ng-show="ctrl.showLastQuerySQL">
+    <pre class="gf-form-pre">{{ctrl.lastQueryMeta.executedQueryString}}</pre>
   </div>
 
   <div class="gf-form" ng-show="ctrl.lastQueryError">

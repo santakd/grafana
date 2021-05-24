@@ -38,7 +38,7 @@ export default class DraggableManagerDemo extends React.PureComponent<{}, Dragga
     };
   }
 
-  _udpateState = (nextState: {}) => {
+  _updateState = (nextState: {}) => {
     this.setState(nextState);
   };
 
@@ -52,15 +52,15 @@ export default class DraggableManagerDemo extends React.PureComponent<{}, Dragga
           <p>Click and drag the gray divider in the colored area, below.</p>
           <p>Value: {dividerPosition.toFixed(3)}</p>
           <div className="DraggableManagerDemo--realm">
-            <DividerDemo position={dividerPosition} updateState={this._udpateState} />
+            <DividerDemo position={dividerPosition} updateState={this._updateState} />
           </div>
         </section>
         <section className="DraggableManagerDemo--scenario">
           <h2>Dragging a Sub-Region</h2>
           <p>Click and drag horizontally somewhere in the colored area, below.</p>
-          <p>Value: {regionDragging && regionDragging.map(n => n.toFixed(3)).join(', ')}</p>
+          <p>Value: {regionDragging && regionDragging.map((n) => n.toFixed(3)).join(', ')}</p>
           <div className="DraggableManagerDemo--realm">
-            <RegionDemo regionCursor={regionCursor} regionDragging={regionDragging} updateState={this._udpateState} />
+            <RegionDemo regionCursor={regionCursor} regionDragging={regionDragging} updateState={this._updateState} />
           </div>
         </section>
       </div>

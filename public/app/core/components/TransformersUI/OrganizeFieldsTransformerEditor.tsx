@@ -1,23 +1,23 @@
 import React, { useCallback, useMemo } from 'react';
-import { css, cx } from 'emotion';
+import { css } from '@emotion/css';
 import { DragDropContext, Draggable, Droppable, DropResult } from 'react-beautiful-dnd';
 import {
   DataFrame,
   DataTransformerID,
   GrafanaTheme,
   standardTransformers,
-  TransformerRegistyItem,
+  TransformerRegistryItem,
   TransformerUIProps,
   getFieldDisplayName,
 } from '@grafana/data';
-import { stylesFactory, useTheme, Input, IconButton } from '@grafana/ui';
+import { stylesFactory, useTheme, Input, IconButton, Icon } from '@grafana/ui';
 
 import { OrganizeFieldsTransformerOptions } from '@grafana/data/src/transformations/transformers/organize';
 import { createOrderFieldsComparer } from '@grafana/data/src/transformations/transformers/order';
 
 interface OrganizeFieldsTransformerEditorProps extends TransformerUIProps<OrganizeFieldsTransformerOptions> {}
 
-const OrganizeFieldsTransformerEditor: React.FC<OrganizeFieldsTransformerEditorProps> = props => {
+const OrganizeFieldsTransformerEditor: React.FC<OrganizeFieldsTransformerEditorProps> = (props) => {
   const { options, input, onChange } = props;
   const { indexByName, excludeByName, renameByName } = options;
 
@@ -34,7 +34,7 @@ const OrganizeFieldsTransformerEditor: React.FC<OrganizeFieldsTransformerEditorP
         },
       });
     },
-    [onChange, excludeByName, indexByName]
+    [onChange, options, excludeByName]
   );
 
   const onDragEnd = useCallback(
@@ -55,7 +55,7 @@ const OrganizeFieldsTransformerEditor: React.FC<OrganizeFieldsTransformerEditorP
         indexByName: reorderToIndex(fieldNames, startIndex, endIndex),
       });
     },
-    [onChange, indexByName, excludeByName, fieldNames]
+    [onChange, options, fieldNames]
   );
 
   const onRenameField = useCallback(
@@ -68,7 +68,7 @@ const OrganizeFieldsTransformerEditor: React.FC<OrganizeFieldsTransformerEditorP
         },
       });
     },
-    [onChange, fieldNames, renameByName]
+    [onChange, options]
   );
 
   // Show warning that we only apply the first frame
@@ -79,7 +79,7 @@ const OrganizeFieldsTransformerEditor: React.FC<OrganizeFieldsTransformerEditorP
   return (
     <DragDropContext onDragEnd={onDragEnd}>
       <Droppable droppableId="sortable-fields-transformer" direction="vertical">
-        {provided => (
+        {(provided) => (
           <div ref={provided.innerRef} {...provided.droppableProps}>
             {orderedFieldNames.map((fieldName, index) => {
               return (
@@ -126,7 +126,7 @@ const DraggableFieldName: React.FC<DraggableFieldProps> = ({
 
   return (
     <Draggable draggableId={fieldName} index={index}>
-      {provided => (
+      {(provided) => (
         <div
           className="gf-form-inline"
           ref={provided.innerRef}
@@ -135,7 +135,7 @@ const DraggableFieldName: React.FC<DraggableFieldProps> = ({
         >
           <div className="gf-form gf-form--grow">
             <div className="gf-form-label gf-form-label--justify-left width-30">
-              <i className={cx('fa fa-ellipsis-v', styles.draggable)} />
+              <Icon name="draggabledots" title="Drag and drop to reorder" size="lg" className={styles.draggable} />
               <IconButton
                 className={styles.toggle}
                 size="md"
@@ -151,7 +151,7 @@ const DraggableFieldName: React.FC<DraggableFieldProps> = ({
               className="flex-grow-1"
               defaultValue={renamedFieldName || ''}
               placeholder={`Rename ${fieldName}`}
-              onBlur={event => onRenameField(fieldName, event.currentTarget.value)}
+              onBlur={(event) => onRenameField(fieldName, event.currentTarget.value)}
             />
           </div>
         </div>
@@ -168,8 +168,6 @@ const getFieldNameStyles = stylesFactory((theme: GrafanaTheme) => ({
     color: ${theme.colors.textWeak};
   `,
   draggable: css`
-    padding: 0 ${theme.spacing.xs};
-    font-size: ${theme.typography.size.md};
     opacity: 0.4;
     &:hover {
       color: ${theme.colors.textStrong};
@@ -223,7 +221,7 @@ export const getAllFieldNamesFromDataFrames = (input: DataFrame[]): string[] => 
   );
 };
 
-export const organizeFieldsTransformRegistryItem: TransformerRegistyItem<OrganizeFieldsTransformerOptions> = {
+export const organizeFieldsTransformRegistryItem: TransformerRegistryItem<OrganizeFieldsTransformerOptions> = {
   id: DataTransformerID.organize,
   editor: OrganizeFieldsTransformerEditor,
   transformation: standardTransformers.organizeFieldsTransformer,

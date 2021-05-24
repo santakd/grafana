@@ -59,12 +59,12 @@ usage() {
 	echo "Usage:"
 	echo "  bulk-dashboards                              - create and provisioning 400 dashboards"
 	echo "  bulk-alerting-dashboards                     - create and provisioning 400 dashboards with alerts"
-	echo "  no args                                      - provisiong core datasources and dev dashboards"
+	echo "  no args                                      - provisioning core datasources and dev dashboards"
 }
 
 main() {
 	echo -e "------------------------------------------------------------------"
-	echo -e "This script setups provisioning for dev datasources and dashboards"
+	echo -e "This script sets up provisioning for dev datasources and dashboards"
 	echo -e "------------------------------------------------------------------"
 	echo -e "\n"
 

@@ -1,18 +1,14 @@
 +++
-title = "Heatmap"
+title = "Heatmap panel"
 description = "Heatmap visualization documentation"
 keywords = ["grafana", "heatmap", "panel", "documentation"]
-type = "docs"
 aliases =["/docs/grafana/latest/features/panels/heatmap/"]
-[menu.docs]
-name = "Heatmap"
-parent = "visualizations"
 weight = 600
 +++
 
-# Heatmap
+# Heatmap panel
 
-The Heatmap panel visualization allows you to view histograms over time. For more information about histograms, refer to [Introduction to histograms and heatmaps]({{< relref "../../getting-started/intro-histograms.md" >}}).
+The Heatmap panel visualization allows you to view histograms over time. For more information about histograms, refer to [Introduction to histograms and heatmaps]({{< relref "../../basics/intro-histograms.md" >}}).
 
 ![](/img/docs/v43/heatmap_panel_cover.jpg)
 
@@ -79,10 +75,10 @@ You can also change the color mode to Opacity. In this case, the color will not 
 
 ### Color scale
 
-By default, Grafana calculates cell colors based on minimum and maximum buckets values. With Min and Max you can overwrite that values. Think of a bucket value as a Z-axis and Min and Max as Z-Min and Z-Max respectively.
+By default, Grafana calculates cell colors based on minimum and maximum buckets values. With Min and Max you can overwrite those values. Think of a bucket value as a Z-axis and Min and Max as Z-Min and Z-Max respectively.
 
-- **Min -** Minimum value using for cell color calculation. If bucket value less than Min, it will be mapped to the "minimum" color. Default is series min value.
-- **Max -** Maximum value using for cell color calculation. If bucket value greater than Max, it will be mapped to the "maximum" color. Default is series max value.
+- **Min -** Minimum value using for cell color calculation. If the bucket value is less than Min, then it is mapped to the "minimum" color. Default is series min value.
+- **Max -** Maximum value using for cell color calculation. If the bucket value is greater than Max, then it is mapped to the "maximum" color. Default is series max value.
 
 ### Legend
 

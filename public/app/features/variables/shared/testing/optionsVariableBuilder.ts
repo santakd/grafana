@@ -1,4 +1,4 @@
-import { VariableOption, VariableWithOptions } from 'app/features/templating/types';
+import { VariableOption, VariableWithOptions } from 'app/features/variables/types';
 import { VariableBuilder } from './variableBuilder';
 
 export class OptionsVariableBuilder<T extends VariableWithOptions> extends VariableBuilder<T> {
@@ -28,7 +28,7 @@ export class OptionsVariableBuilder<T extends VariableWithOptions> extends Varia
     return this;
   }
 
-  withQuery(query: string) {
+  withQuery(query: any) {
     this.variable.query = query;
     return this;
   }

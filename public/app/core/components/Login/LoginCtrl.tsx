@@ -1,12 +1,6 @@
-import React from 'react';
+import React, { PureComponent } from 'react';
 import config from 'app/core/config';
-
-import { updateLocation } from 'app/core/actions';
-import { connect } from 'react-redux';
-import { StoreState } from 'app/types';
-import { PureComponent } from 'react';
 import { getBackendSrv } from '@grafana/runtime';
-import { hot } from 'react-hot-loader';
 import appEvents from 'app/core/app_events';
 import { AppEvents } from '@grafana/data';
 
@@ -19,9 +13,10 @@ export interface FormModel {
   password: string;
   email: string;
 }
+
 interface Props {
-  routeParams?: any;
-  updateLocation?: typeof updateLocation;
+  resetCode?: string;
+
   children: (props: {
     isLoggingIn: boolean;
     changePassword: (pw: string) => void;
@@ -45,6 +40,7 @@ interface State {
 
 export class LoginCtrl extends PureComponent<Props, State> {
   result: any = {};
+
   constructor(props: Props) {
     super(props);
     this.state = {
@@ -63,12 +59,27 @@ export class LoginCtrl extends PureComponent<Props, State> {
       confirmNew: password,
       oldPassword: 'admin',
     };
+
+    if (!this.props.resetCode) {
+      getBackendSrv()
+        .put('/api/user/password', pw)
+        .then(() => {
+          this.toGrafana();
+        })
+        .catch((err: any) => console.error(err));
+    }
+
+    const resetModel = {
+      code: this.props.resetCode,
+      newPassword: password,
+      confirmPassword: password,
+    };
+
     getBackendSrv()
-      .put('/api/user/password', pw)
+      .post('/api/user/password/reset', resetModel)
       .then(() => {
         this.toGrafana();
-      })
-      .catch((err: any) => console.log(err));
+      });
   };
 
   login = (formModel: FormModel) => {
@@ -101,15 +112,8 @@ export class LoginCtrl extends PureComponent<Props, State> {
   };
 
   toGrafana = () => {
-    const params = this.props.routeParams;
     // Use window.location.href to force page reload
-    if (params.redirect && params.redirect[0] === '/') {
-      if (config.appSubUrl !== '' && !params.redirect.startsWith(config.appSubUrl)) {
-        window.location.href = config.appSubUrl + params.redirect;
-      } else {
-        window.location.href = params.redirect;
-      }
-    } else if (this.result.redirectUrl) {
+    if (this.result.redirectUrl) {
       if (config.appSubUrl !== '' && !this.result.redirectUrl.startsWith(config.appSubUrl)) {
         window.location.href = config.appSubUrl + this.result.redirectUrl;
       } else {
@@ -147,10 +151,4 @@ export class LoginCtrl extends PureComponent<Props, State> {
   }
 }
 
-export const mapStateToProps = (state: StoreState) => ({
-  routeParams: state.location.routeParams,
-});
-
-const mapDispatchToProps = { updateLocation };
-
-export default hot(module)(connect(mapStateToProps, mapDispatchToProps)(LoginCtrl));
+export default LoginCtrl;

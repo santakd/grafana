@@ -15,13 +15,13 @@
 import * as React from 'react';
 import IoIosArrowDown from 'react-icons/lib/io/ios-arrow-down';
 import IoIosArrowRight from 'react-icons/lib/io/ios-arrow-right';
-import { css } from 'emotion';
+import { css } from '@emotion/css';
 import cx from 'classnames';
 
 import * as markers from './AccordianKeyValues.markers';
 import KeyValuesTable from './KeyValuesTable';
 import { TNil } from '../../types';
-import { KeyValuePair, Link } from '../../types/trace';
+import { TraceKeyValuePair, TraceLink } from '../../types/trace';
 import { autoColor, createStyle, Theme, useTheme } from '../../Theme';
 import { uAlignIcon, uTxEllipsis } from '../../uberUtilityStyles';
 
@@ -84,22 +84,24 @@ export const getStyles = createStyle((theme: Theme) => {
 
 type AccordianKeyValuesProps = {
   className?: string | TNil;
-  data: KeyValuePair[];
+  data: TraceKeyValuePair[];
   highContrast?: boolean;
   interactive?: boolean;
   isOpen: boolean;
   label: string;
-  linksGetter: ((pairs: KeyValuePair[], index: number) => Link[]) | TNil;
+  linksGetter: ((pairs: TraceKeyValuePair[], index: number) => TraceLink[]) | TNil;
   onToggle?: null | (() => void);
 };
 
 // export for tests
-export function KeyValuesSummary(props: { data?: KeyValuePair[] }) {
+export function KeyValuesSummary(props: { data?: TraceKeyValuePair[] }) {
   const { data } = props;
+  const styles = getStyles(useTheme());
+
   if (!Array.isArray(data) || !data.length) {
     return null;
   }
-  const styles = getStyles(useTheme());
+
   return (
     <ul className={styles.summary}>
       {data.map((item, i) => (

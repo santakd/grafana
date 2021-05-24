@@ -1,9 +1,8 @@
 import React, { PureComponent } from 'react';
-import { css, cx } from 'emotion';
+import { css, cx } from '@emotion/css';
 import { GrafanaTheme, TimeZone, AbsoluteTimeRange, GraphSeriesXY, dateTime } from '@grafana/data';
 
 import {
-  selectThemeVariant,
   Themeable,
   GraphWithLegend,
   LegendDisplayMode,
@@ -11,8 +10,9 @@ import {
   Collapse,
   GraphSeriesToggler,
   GraphSeriesTogglerAPI,
-  Chart,
+  VizTooltip,
   Icon,
+  TooltipDisplayMode,
 } from '@grafana/ui';
 
 const MAX_NUMBER_OF_TIME_SERIES = 20;
@@ -25,7 +25,7 @@ const getStyles = (theme: GrafanaTheme) => ({
     padding: 10px 0;
     border-radius: ${theme.border.radius.md};
     text-align: center;
-    background-color: ${selectThemeVariant({ light: theme.palette.white, dark: theme.palette.dark4 }, theme.type)};
+    background-color: ${theme.isLight ? theme.palette.white : theme.palette.dark4};
   `,
   disclaimerIcon: css`
     label: disclaimer-icon;
@@ -40,7 +40,8 @@ const getStyles = (theme: GrafanaTheme) => ({
 });
 
 interface Props extends Themeable {
-  series?: GraphSeriesXY[];
+  ariaLabel?: string;
+  series?: GraphSeriesXY[] | null;
   width: number;
   absoluteRange: AbsoluteTimeRange;
   loading?: boolean;
@@ -48,11 +49,8 @@ interface Props extends Themeable {
   showBars: boolean;
   showLines: boolean;
   isStacked: boolean;
-  showingGraph?: boolean;
-  showingTable?: boolean;
   timeZone?: TimeZone;
   onUpdateTimeRange: (absoluteRange: AbsoluteTimeRange) => void;
-  onToggleGraph?: (showingGraph: boolean) => void;
   onHiddenSeriesChanged?: (hiddenSeries: string[]) => void;
 }
 
@@ -73,13 +71,6 @@ class UnThemedExploreGraphPanel extends PureComponent<Props, State> {
     });
   };
 
-  onClickGraphButton = () => {
-    const { onToggleGraph, showingGraph } = this.props;
-    if (onToggleGraph) {
-      onToggleGraph(showingGraph ?? false);
-    }
-  };
-
   onChangeTime = (from: number, to: number) => {
     const { onUpdateTimeRange } = this.props;
     onUpdateTimeRange({ from, to });
@@ -87,14 +78,13 @@ class UnThemedExploreGraphPanel extends PureComponent<Props, State> {
 
   renderGraph = () => {
     const {
+      ariaLabel,
       width,
       series,
       onHiddenSeriesChanged,
       timeZone,
       absoluteRange,
       showPanel,
-      showingGraph,
-      showingTable,
       showBars,
       showLines,
       isStacked,
@@ -114,19 +104,18 @@ class UnThemedExploreGraphPanel extends PureComponent<Props, State> {
       },
     };
 
-    const height = showPanel === false ? 100 : showingGraph && showingTable ? 200 : 400;
+    const height = showPanel ? 200 : 100;
     const lineWidth = showLines ? 1 : 5;
     const seriesToShow = showAllTimeSeries ? series : series.slice(0, MAX_NUMBER_OF_TIME_SERIES);
-
     return (
       <GraphSeriesToggler series={seriesToShow} onHiddenSeriesChanged={onHiddenSeriesChanged}>
         {({ onSeriesToggle, toggledSeries }: GraphSeriesTogglerAPI) => {
           return (
             <GraphWithLegend
-              displayMode={LegendDisplayMode.List}
+              ariaLabel={ariaLabel}
+              legendDisplayMode={LegendDisplayMode.List}
               height={height}
-              isLegendVisible={true}
-              placement={'under'}
+              placement={'bottom'}
               width={width}
               timeRange={timeRange}
               timeZone={timeZone}
@@ -141,7 +130,7 @@ class UnThemedExploreGraphPanel extends PureComponent<Props, State> {
               onHorizontalRegionSelected={this.onChangeTime}
             >
               {/* For logs we are using mulit mode until we refactor logs histogram to use barWidth instead of lineWidth to render bars */}
-              <Chart.Tooltip mode={showBars ? 'multi' : 'single'} />
+              <VizTooltip mode={showBars ? TooltipDisplayMode.Multi : TooltipDisplayMode.Single} />
             </GraphWithLegend>
           );
         }}
@@ -150,7 +139,7 @@ class UnThemedExploreGraphPanel extends PureComponent<Props, State> {
   };
 
   render() {
-    const { series, showPanel, showingGraph, loading, theme } = this.props;
+    const { series, showPanel, loading, theme } = this.props;
     const { showAllTimeSeries } = this.state;
     const style = getStyles(theme);
 
@@ -168,13 +157,7 @@ class UnThemedExploreGraphPanel extends PureComponent<Props, State> {
         )}
 
         {showPanel && (
-          <Collapse
-            label="Graph"
-            collapsible
-            isOpen={showingGraph}
-            loading={loading}
-            onToggle={this.onClickGraphButton}
-          >
+          <Collapse label="Graph" loading={loading} isOpen>
             {this.renderGraph()}
           </Collapse>
         )}

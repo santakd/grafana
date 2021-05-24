@@ -1,29 +1,26 @@
 // Libraries
 import React, { Component } from 'react';
-import { hot } from 'react-hot-loader';
-import { connect } from 'react-redux';
-// Types
-import { StoreState } from 'app/types';
-import { AppEvents, AppPlugin, AppPluginMeta, NavModel, PluginType, UrlQueryMap } from '@grafana/data';
+import { AppEvents, AppPlugin, AppPluginMeta, KeyValue, NavModel, PluginType } from '@grafana/data';
+import { createHtmlPortalNode, InPortal, OutPortal, HtmlPortalNode } from 'react-reverse-portal';
 
 import Page from 'app/core/components/Page/Page';
 import { getPluginSettings } from './PluginSettingsCache';
 import { importAppPlugin } from './plugin_loader';
-import { getLoadingNav } from './PluginPage';
-import { getNotFoundNav, getWarningNav } from 'app/core/nav_model_srv';
+import { getNotFoundNav, getWarningNav, getExceptionNav } from 'app/core/nav_model_srv';
 import { appEvents } from 'app/core/core';
-
-interface Props {
-  pluginId: string; // From the angular router
-  query: UrlQueryMap;
-  path: string;
-  slug?: string;
+import PageLoader from 'app/core/components/PageLoader/PageLoader';
+import { GrafanaRouteComponentProps } from 'app/core/navigation/types';
+interface RouteParams {
+  pluginId: string;
 }
+
+interface Props extends GrafanaRouteComponentProps<RouteParams> {}
 
 interface State {
   loading: boolean;
-  plugin?: AppPlugin;
-  nav: NavModel;
+  portalNode: HtmlPortalNode;
+  plugin?: AppPlugin | null;
+  nav?: NavModel;
 }
 
 export function getAppPluginPageError(meta: AppPluginMeta) {
@@ -44,15 +41,17 @@ class AppRootPage extends Component<Props, State> {
     super(props);
     this.state = {
       loading: true,
-      nav: getLoadingNav(),
+      portalNode: createHtmlPortalNode(),
     };
   }
 
-  async componentDidMount() {
-    const { pluginId } = this.props;
-
+  shouldComponentUpdate(nextProps: Props) {
+    return nextProps.location.pathname.startsWith('/a/');
+  }
+  async loadPluginSettings() {
+    const { params } = this.props.match;
     try {
-      const app = await getPluginSettings(pluginId).then(info => {
+      const app = await getPluginSettings(params.pluginId).then((info) => {
         const error = getAppPluginPageError(info);
         if (error) {
           appEvents.emit(AppEvents.alertError, [error]);
@@ -61,19 +60,38 @@ class AppRootPage extends Component<Props, State> {
         }
         return importAppPlugin(info);
       });
-      this.setState({ plugin: app, loading: false });
+      this.setState({ plugin: app, loading: false, nav: undefined });
     } catch (err) {
-      this.setState({ plugin: null, loading: false, nav: getNotFoundNav() });
+      this.setState({
+        plugin: null,
+        loading: false,
+        nav: process.env.NODE_ENV === 'development' ? getExceptionNav(err) : getNotFoundNav(),
+      });
+    }
+  }
+
+  componentDidMount() {
+    this.loadPluginSettings();
+  }
+
+  componentDidUpdate(prevProps: Props) {
+    const { params } = this.props.match;
+
+    if (prevProps.match.params.pluginId !== params.pluginId) {
+      this.setState({
+        loading: true,
+      });
+      this.loadPluginSettings();
     }
   }
 
   onNavChanged = (nav: NavModel) => {
+    console.log('NAV CHANGED!!!', nav);
     this.setState({ nav });
   };
 
   render() {
-    const { path, query } = this.props;
-    const { loading, plugin, nav } = this.state;
+    const { loading, plugin, nav, portalNode } = this.state;
 
     if (plugin && !plugin.root) {
       // TODO? redirect to plugin page?
@@ -81,22 +99,33 @@ class AppRootPage extends Component<Props, State> {
     }
 
     return (
-      <Page navModel={nav}>
-        <Page.Contents isLoading={loading}>
-          {!loading && plugin && (
-            <plugin.root meta={plugin.meta} query={query} path={path} onNavChanged={this.onNavChanged} />
+      <>
+        <InPortal node={portalNode}>
+          {plugin && plugin.root && (
+            <plugin.root
+              meta={plugin.meta}
+              basename={this.props.match.url}
+              onNavChanged={this.onNavChanged}
+              query={this.props.queryParams as KeyValue}
+              path={this.props.location.pathname}
+            />
           )}
-        </Page.Contents>
-      </Page>
+        </InPortal>
+        {nav ? (
+          <Page navModel={nav}>
+            <Page.Contents isLoading={loading}>
+              <OutPortal node={portalNode} />
+            </Page.Contents>
+          </Page>
+        ) : (
+          <Page>
+            <OutPortal node={portalNode} />
+            {loading && <PageLoader />}
+          </Page>
+        )}
+      </>
     );
   }
 }
 
-const mapStateToProps = (state: StoreState) => ({
-  pluginId: state.location.routeParams.pluginId,
-  slug: state.location.routeParams.slug,
-  query: state.location.query,
-  path: state.location.path,
-});
-
-export default hot(module)(connect(mapStateToProps)(AppRootPage));
+export default AppRootPage;

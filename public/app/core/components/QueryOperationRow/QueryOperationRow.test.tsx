@@ -1,13 +1,13 @@
 import React from 'react';
 import { QueryOperationRow } from './QueryOperationRow';
-import { shallow, mount } from 'enzyme';
+import { mount, shallow } from 'enzyme';
 import { act } from 'react-dom/test-utils';
 
 describe('QueryOperationRow', () => {
   it('renders', () => {
     expect(() =>
       shallow(
-        <QueryOperationRow>
+        <QueryOperationRow id="test-id" index={0}>
           <div>Test</div>
         </QueryOperationRow>
       )
@@ -17,9 +17,10 @@ describe('QueryOperationRow', () => {
   describe('callbacks', () => {
     it('should not call onOpen when component is shallowed', async () => {
       const onOpenSpy = jest.fn();
+      // @ts-ignore strict null error, you shouldn't use promise like approach with act but I don't know what the intention is here
       await act(async () => {
         shallow(
-          <QueryOperationRow onOpen={onOpenSpy}>
+          <QueryOperationRow onOpen={onOpenSpy} id="test-id" index={0}>
             <div>Test</div>
           </QueryOperationRow>
         );
@@ -31,17 +32,20 @@ describe('QueryOperationRow', () => {
       const onOpenSpy = jest.fn();
       const onCloseSpy = jest.fn();
       const wrapper = mount(
-        <QueryOperationRow onOpen={onOpenSpy} onClose={onCloseSpy} isOpen={false}>
+        <QueryOperationRow title="title" onOpen={onOpenSpy} onClose={onCloseSpy} isOpen={false} id="test-id" index={0}>
           <div>Test</div>
         </QueryOperationRow>
       );
       const titleEl = wrapper.find({ 'aria-label': 'Query operation row title' });
       expect(titleEl).toHaveLength(1);
 
+      // @ts-ignore strict null error, you shouldn't use promise like approach with act but I don't know what the intention is here
       await act(async () => {
         // open
         titleEl.first().simulate('click');
       });
+
+      // @ts-ignore strict null error, you shouldn't use promise like approach with act but I don't know what the intention is here
       await act(async () => {
         // close
         titleEl.first().simulate('click');
@@ -52,11 +56,11 @@ describe('QueryOperationRow', () => {
     });
   });
 
-  describe('title rendering', () => {
-    it('should render title provided as element', () => {
+  describe('headerElement rendering', () => {
+    it('should render headerElement provided as element', () => {
       const title = <div aria-label="test title">Test</div>;
       const wrapper = shallow(
-        <QueryOperationRow title={title}>
+        <QueryOperationRow headerElement={title} id="test-id" index={0}>
           <div>Test</div>
         </QueryOperationRow>
       );
@@ -64,10 +68,11 @@ describe('QueryOperationRow', () => {
       const titleEl = wrapper.find({ 'aria-label': 'test title' });
       expect(titleEl).toHaveLength(1);
     });
-    it('should render title provided as function', () => {
+
+    it('should render headerElement provided as function', () => {
       const title = () => <div aria-label="test title">Test</div>;
       const wrapper = shallow(
-        <QueryOperationRow title={title}>
+        <QueryOperationRow headerElement={title} id="test-id" index={0}>
           <div>Test</div>
         </QueryOperationRow>
       );
@@ -76,14 +81,14 @@ describe('QueryOperationRow', () => {
       expect(titleEl).toHaveLength(1);
     });
 
-    it('should expose api to title rendered as function', () => {
+    it('should expose api to headerElement rendered as function', () => {
       const propsSpy = jest.fn();
       const title = (props: any) => {
         propsSpy(props);
         return <div aria-label="test title">Test</div>;
       };
       shallow(
-        <QueryOperationRow title={title}>
+        <QueryOperationRow headerElement={title} id="test-id" index={0}>
           <div>Test</div>
         </QueryOperationRow>
       );
@@ -96,7 +101,7 @@ describe('QueryOperationRow', () => {
     it('should render actions provided as element', () => {
       const actions = <div aria-label="test actions">Test</div>;
       const wrapper = shallow(
-        <QueryOperationRow actions={actions}>
+        <QueryOperationRow actions={actions} id="test-id" index={0}>
           <div>Test</div>
         </QueryOperationRow>
       );
@@ -107,7 +112,7 @@ describe('QueryOperationRow', () => {
     it('should render actions provided as function', () => {
       const actions = () => <div aria-label="test actions">Test</div>;
       const wrapper = shallow(
-        <QueryOperationRow actions={actions}>
+        <QueryOperationRow actions={actions} id="test-id" index={0}>
           <div>Test</div>
         </QueryOperationRow>
       );
@@ -123,14 +128,12 @@ describe('QueryOperationRow', () => {
         return <div aria-label="test actions">Test</div>;
       };
       shallow(
-        <QueryOperationRow actions={actions}>
+        <QueryOperationRow actions={actions} id="test-id" index={0}>
           <div>Test</div>
         </QueryOperationRow>
       );
 
-      expect(Object.keys(propsSpy.mock.calls[0][0])).toContainEqual('isOpen');
-      expect(Object.keys(propsSpy.mock.calls[0][0])).toContainEqual('openRow');
-      expect(Object.keys(propsSpy.mock.calls[0][0])).toContainEqual('closeRow');
+      expect(Object.keys(propsSpy.mock.calls[0][0])).toEqual(['isOpen', 'onOpen', 'onClose']);
     });
   });
 });

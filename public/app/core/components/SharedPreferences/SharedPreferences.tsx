@@ -1,12 +1,25 @@
 import React, { PureComponent } from 'react';
+import { css } from '@emotion/css';
 
-import { InlineFormLabel, LegacyForms } from '@grafana/ui';
-const { Select } = LegacyForms;
+import {
+  Select,
+  Field,
+  Form,
+  Tooltip,
+  Icon,
+  stylesFactory,
+  Label,
+  Button,
+  RadioButtonGroup,
+  FieldSet,
+  TimeZonePicker,
+} from '@grafana/ui';
+import { SelectableValue } from '@grafana/data';
+import { selectors } from '@grafana/e2e-selectors';
 
 import { DashboardSearchHit, DashboardSearchItemType } from 'app/features/search/types';
 import { backendSrv } from 'app/core/services/backend_srv';
-import { getTimeZoneGroups, SelectableValue } from '@grafana/data';
-import { selectors } from '@grafana/e2e-selectors';
+import { PreferencesService } from 'app/core/services/PreferencesService';
 
 export interface Props {
   resourceUri: string;
@@ -19,30 +32,19 @@ export interface State {
   dashboards: DashboardSearchHit[];
 }
 
-const themes = [
+const themes: SelectableValue[] = [
   { value: '', label: 'Default' },
   { value: 'dark', label: 'Dark' },
   { value: 'light', label: 'Light' },
 ];
 
-const grafanaTimeZones = [
-  { value: '', label: 'Default' },
-  { value: 'browser', label: 'Local browser time' },
-  { value: 'utc', label: 'UTC' },
-];
-
-const timeZones = getTimeZoneGroups().reduce((tzs, group) => {
-  const options = group.options.map(tz => ({ value: tz, label: tz }));
-  tzs.push.apply(tzs, options);
-  return tzs;
-}, grafanaTimeZones);
-
 export class SharedPreferences extends PureComponent<Props, State> {
-  backendSrv = backendSrv;
+  service: PreferencesService;
 
   constructor(props: Props) {
     super(props);
 
+    this.service = new PreferencesService(props.resourceUri);
     this.state = {
       homeDashboardId: 0,
       theme: '',
@@ -52,7 +54,7 @@ export class SharedPreferences extends PureComponent<Props, State> {
   }
 
   async componentDidMount() {
-    const prefs = await backendSrv.get(`/api/${this.props.resourceUri}/preferences`);
+    const prefs = await this.service.load();
     const dashboards = await backendSrv.search({ starred: true });
     const defaultDashboardHit: DashboardSearchHit = {
       id: 0,
@@ -71,7 +73,7 @@ export class SharedPreferences extends PureComponent<Props, State> {
       items: [],
     };
 
-    if (prefs.homeDashboardId > 0 && !dashboards.find(d => d.id === prefs.homeDashboardId)) {
+    if (prefs.homeDashboardId > 0 && !dashboards.find((d) => d.id === prefs.homeDashboardId)) {
       const missing = await backendSrv.search({ dashboardIds: [prefs.homeDashboardId] });
       if (missing && missing.length > 0) {
         dashboards.push(missing[0]);
@@ -86,31 +88,21 @@ export class SharedPreferences extends PureComponent<Props, State> {
     });
   }
 
-  onSubmitForm = async (event: React.SyntheticEvent) => {
-    event.preventDefault();
-
+  onSubmitForm = async () => {
     const { homeDashboardId, theme, timezone } = this.state;
-
-    await backendSrv.put(`/api/${this.props.resourceUri}/preferences`, {
-      homeDashboardId,
-      theme,
-      timezone,
-    });
+    this.service.update({ homeDashboardId, theme, timezone });
     window.location.reload();
   };
 
-  onThemeChanged = (theme: SelectableValue<string>) => {
-    if (!theme || typeof theme.value !== 'string') {
-      return;
-    }
-    this.setState({ theme: theme.value });
+  onThemeChanged = (value: string) => {
+    this.setState({ theme: value });
   };
 
-  onTimeZoneChanged = (timezone: SelectableValue<string>) => {
-    if (!timezone || typeof timezone.value !== 'string') {
+  onTimeZoneChanged = (timezone: string) => {
+    if (!timezone) {
       return;
     }
-    this.setState({ timezone: timezone.value });
+    this.setState({ timezone: timezone });
   };
 
   onHomeDashboardChanged = (dashboardId: number) => {
@@ -126,55 +118,61 @@ export class SharedPreferences extends PureComponent<Props, State> {
 
   render() {
     const { theme, timezone, homeDashboardId, dashboards } = this.state;
+    const styles = getStyles();
 
     return (
-      <form className="section gf-form-group" onSubmit={this.onSubmitForm}>
-        <h3 className="page-heading">Preferences</h3>
-        <div className="gf-form">
-          <span className="gf-form-label width-11">UI Theme</span>
-          <Select
-            isSearchable={false}
-            value={themes.find(item => item.value === theme)}
-            options={themes}
-            onChange={this.onThemeChanged}
-            width={20}
-          />
-        </div>
-        <div className="gf-form">
-          <InlineFormLabel
-            width={11}
-            tooltip="Not finding dashboard you want? Star it first, then it should appear in this select box."
-          >
-            Home Dashboard
-          </InlineFormLabel>
-          <Select
-            value={dashboards.find(dashboard => dashboard.id === homeDashboardId)}
-            getOptionValue={i => i.id}
-            getOptionLabel={this.getFullDashName}
-            onChange={(dashboard: DashboardSearchHit) => this.onHomeDashboardChanged(dashboard.id)}
-            options={dashboards}
-            placeholder="Choose default dashboard"
-            width={20}
-          />
-        </div>
-        <div className="gf-form" aria-label={selectors.components.TimeZonePicker.container}>
-          <label className="gf-form-label width-11">Timezone</label>
-          <Select
-            isSearchable={true}
-            value={timeZones.find(item => item.value === timezone)}
-            onChange={this.onTimeZoneChanged}
-            options={timeZones}
-            width={20}
-          />
-        </div>
-        <div className="gf-form-button-row">
-          <button type="submit" className="btn btn-primary">
-            Save
-          </button>
-        </div>
-      </form>
+      <Form onSubmit={this.onSubmitForm}>
+        {() => {
+          return (
+            <FieldSet label="Preferences">
+              <Field label="UI Theme">
+                <RadioButtonGroup
+                  options={themes}
+                  value={themes.find((item) => item.value === theme)?.value}
+                  onChange={this.onThemeChanged}
+                />
+              </Field>
+
+              <Field
+                label={
+                  <Label>
+                    <span className={styles.labelText}>Home Dashboard</span>
+                    <Tooltip content="Not finding dashboard you want? Star it first, then it should appear in this select box.">
+                      <Icon name="info-circle" />
+                    </Tooltip>
+                  </Label>
+                }
+              >
+                <Select
+                  value={dashboards.find((dashboard) => dashboard.id === homeDashboardId)}
+                  getOptionValue={(i) => i.id}
+                  getOptionLabel={this.getFullDashName}
+                  onChange={(dashboard: DashboardSearchHit) => this.onHomeDashboardChanged(dashboard.id)}
+                  options={dashboards}
+                  placeholder="Choose default dashboard"
+                />
+              </Field>
+
+              <Field label="Timezone" aria-label={selectors.components.TimeZonePicker.container}>
+                <TimeZonePicker includeInternal={true} value={timezone} onChange={this.onTimeZoneChanged} />
+              </Field>
+              <div className="gf-form-button-row">
+                <Button variant="primary">Save</Button>
+              </div>
+            </FieldSet>
+          );
+        }}
+      </Form>
     );
   }
 }
 
 export default SharedPreferences;
+
+const getStyles = stylesFactory(() => {
+  return {
+    labelText: css`
+      margin-right: 6px;
+    `,
+  };
+});

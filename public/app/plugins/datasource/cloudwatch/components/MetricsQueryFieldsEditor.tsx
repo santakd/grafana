@@ -1,15 +1,15 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { SelectableValue } from '@grafana/data';
 import { Segment, SegmentAsync } from '@grafana/ui';
-import { CloudWatchQuery, SelectableStrings, CloudWatchMetricsQuery } from '../types';
+import { CloudWatchMetricsQuery, SelectableStrings } from '../types';
 import { CloudWatchDatasource } from '../datasource';
-import { Stats, Dimensions, QueryInlineField } from '.';
+import { Dimensions, QueryInlineField, Stats } from '.';
 
 export type Props = {
-  query: CloudWatchQuery;
+  query: CloudWatchMetricsQuery;
   datasource: CloudWatchDatasource;
   onRunQuery?: () => void;
-  onChange: (value: CloudWatchQuery) => void;
+  onChange: (value: CloudWatchMetricsQuery) => void;
 };
 
 interface State {
@@ -39,20 +39,20 @@ export function MetricsQueryFieldsEditor({
   useEffect(() => {
     const variableOptionGroup = {
       label: 'Template Variables',
-      options: datasource.variables.map(toOption),
+      options: datasource.getVariables().map(toOption),
     };
 
     Promise.all([datasource.metricFindQuery('regions()'), datasource.metricFindQuery('namespaces()')]).then(
       ([regions, namespaces]) => {
-        setState({
-          ...state,
+        setState((prevState) => ({
+          ...prevState,
           regions: [...regions, variableOptionGroup],
           namespaces: [...namespaces, variableOptionGroup],
           variableOptionGroup,
-        });
+        }));
       }
     );
-  }, []);
+  }, [datasource]);
 
   const loadMetricNames = async () => {
     const { namespace, region } = query;
@@ -61,12 +61,12 @@ export function MetricsQueryFieldsEditor({
 
   const appendTemplateVariables = (values: SelectableValue[]) => [
     ...values,
-    { label: 'Template Variables', options: datasource.variables.map(toOption) },
+    { label: 'Template Variables', options: datasource.getVariables().map(toOption) },
   ];
 
   const toOption = (value: any) => ({ label: value, value });
 
-  const onQueryChange = (query: CloudWatchQuery) => {
+  const onQueryChange = (query: CloudWatchMetricsQuery) => {
     onChange(query);
     onRunQuery();
   };
@@ -81,7 +81,7 @@ export function MetricsQueryFieldsEditor({
     );
     return datasource
       .getDimensionValues(query.region, query.namespace, metricsQuery.metricName, newKey, newDimensions)
-      .then(values => (values.length ? [{ value: '*', text: '*', label: '*' }, ...values] : values))
+      .then((values) => (values.length ? [{ value: '*', text: '*', label: '*' }, ...values] : values))
       .then(appendTemplateVariables);
   };
 
@@ -94,11 +94,11 @@ export function MetricsQueryFieldsEditor({
           placeholder="Select region"
           options={regions}
           allowCustomValue
-          onChange={({ value: region }) => onQueryChange({ ...query, region })}
+          onChange={({ value: region }) => onQueryChange({ ...query, region: region! })}
         />
       </QueryInlineField>
 
-      {query.expression.length === 0 && (
+      {query.expression?.length === 0 && (
         <>
           <QueryInlineField label="Namespace">
             <Segment
@@ -106,7 +106,7 @@ export function MetricsQueryFieldsEditor({
               placeholder="Select namespace"
               allowCustomValue
               options={namespaces}
-              onChange={({ value: namespace }) => onQueryChange({ ...query, namespace })}
+              onChange={({ value: namespace }) => onQueryChange({ ...query, namespace: namespace! })}
             />
           </QueryInlineField>
 
@@ -124,7 +124,7 @@ export function MetricsQueryFieldsEditor({
             <Stats
               stats={datasource.standardStatistics.map(toOption)}
               values={metricsQuery.statistics}
-              onChange={statistics => onQueryChange({ ...metricsQuery, statistics })}
+              onChange={(statistics) => onQueryChange({ ...metricsQuery, statistics })}
               variableOptionGroup={variableOptionGroup}
             />
           </QueryInlineField>
@@ -132,7 +132,7 @@ export function MetricsQueryFieldsEditor({
           <QueryInlineField label="Dimensions">
             <Dimensions
               dimensions={metricsQuery.dimensions}
-              onChange={dimensions => onQueryChange({ ...metricsQuery, dimensions })}
+              onChange={(dimensions) => onQueryChange({ ...metricsQuery, dimensions })}
               loadKeys={() => datasource.getDimensionKeys(query.namespace, query.region).then(appendTemplateVariables)}
               loadValues={loadDimensionValues}
             />

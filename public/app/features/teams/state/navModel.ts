@@ -6,7 +6,7 @@ export function buildNavModel(team: Team): NavModelItem {
   const navModel = {
     img: team.avatarUrl,
     id: 'team-' + team.id,
-    subTitle: 'Manage members & settings',
+    subTitle: 'Manage members and settings',
     url: '',
     text: team.name,
     breadcrumbs: [{ title: 'Teams', url: 'org/teams' }],
@@ -54,8 +54,8 @@ export function getTeamLoadingNav(pageName: string): NavModel {
   let node: NavModelItem;
 
   // find active page
-  for (const child of main.children) {
-    if (child.id.indexOf(pageName) > 0) {
+  for (const child of main.children!) {
+    if (child.id!.indexOf(pageName) > 0) {
       child.active = true;
       node = child;
       break;
@@ -64,6 +64,6 @@ export function getTeamLoadingNav(pageName: string): NavModel {
 
   return {
     main: main,
-    node: node,
+    node: node!,
   };
 }

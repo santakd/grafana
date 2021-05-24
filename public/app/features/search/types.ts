@@ -41,6 +41,8 @@ export interface DashboardSectionItem {
   uid?: string;
   uri: string;
   url: string;
+  sortMeta?: number;
+  sortMetaName?: string;
 }
 
 export interface DashboardSearchHit extends DashboardSectionItem, DashboardSection {}
@@ -52,10 +54,6 @@ export interface DashboardTag {
 
 export interface SearchAction extends Action {
   payload?: any;
-}
-
-export interface OpenSearchParams {
-  query?: string;
 }
 
 export interface UidsToDelete {
@@ -71,6 +69,8 @@ export interface DashboardQuery {
   skipStarred: boolean;
   folderIds: number[];
   sort: SelectableValue | null;
+  // Save sorting data between layouts
+  prevSort: SelectableValue | null;
   layout: SearchLayout;
 }
 
@@ -94,4 +94,13 @@ export type OnMoveItems = (selectedDashboards: DashboardSectionItem[], folder: F
 export enum SearchLayout {
   List = 'list',
   Folders = 'folders',
+}
+
+export interface SearchQueryParams {
+  query?: string | null;
+  sort?: string | null;
+  starred?: boolean | null;
+  tag?: string[] | null;
+  layout?: SearchLayout | null;
+  folder?: string | null;
 }

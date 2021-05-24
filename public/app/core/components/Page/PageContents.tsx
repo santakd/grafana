@@ -1,20 +1,16 @@
 // Libraries
-import React, { Component } from 'react';
+import React, { FC } from 'react';
+import { cx } from '@emotion/css';
 
 // Components
 import PageLoader from '../PageLoader/PageLoader';
 
 interface Props {
   isLoading?: boolean;
-  children: JSX.Element[] | JSX.Element;
+  children: React.ReactNode;
+  className?: string;
 }
 
-class PageContents extends Component<Props> {
-  render() {
-    const { isLoading } = this.props;
-
-    return <div className="page-container page-body">{isLoading ? <PageLoader /> : this.props.children}</div>;
-  }
-}
-
-export default PageContents;
+export const PageContents: FC<Props> = ({ isLoading, children, className }) => {
+  return <div className={cx('page-container', 'page-body', className)}>{isLoading ? <PageLoader /> : children}</div>;
+};

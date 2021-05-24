@@ -1,13 +1,6 @@
-import debounce from 'lodash/debounce';
+import { debounce, trim } from 'lodash';
 import { StoreState, ThunkDispatch, ThunkResult } from 'app/types';
-import {
-  QueryVariableModel,
-  VariableOption,
-  VariableRefresh,
-  VariableTag,
-  VariableWithMultiSupport,
-  VariableWithOptions,
-} from '../../../templating/types';
+import { VariableOption, VariableWithMultiSupport, VariableWithOptions } from '../../types';
 import { variableAdapters } from '../../adapters';
 import { getVariable } from '../../state/selectors';
 import { NavigationKey } from '../types';
@@ -15,17 +8,15 @@ import {
   hideOptions,
   moveOptionsHighlight,
   OptionsPickerState,
+  showOptions,
   toggleOption,
-  toggleTag,
   updateOptionsAndFilter,
   updateOptionsFromSearch,
   updateSearchQuery,
 } from './reducer';
-import { getDataSourceSrv } from '@grafana/runtime';
-import { getTimeSrv } from 'app/features/dashboard/services/TimeSrv';
 import { changeVariableProp, setCurrentVariableValue } from '../../state/sharedReducer';
-import { toVariablePayload } from '../../state/types';
-import { containsSearchFilter } from '../../../templating/utils';
+import { toVariablePayload, VariableIdentifier } from '../../state/types';
+import { containsSearchFilter, getCurrentText } from '../../utils';
 
 export const navigateOptions = (key: NavigationKey, clearOthers: boolean): ThunkResult<void> => {
   return async (dispatch, getState) => {
@@ -38,7 +29,7 @@ export const navigateOptions = (key: NavigationKey, clearOthers: boolean): Thunk
     }
 
     if (key === NavigationKey.selectAndClose) {
-      dispatch(toggleOptionByHighlight(clearOthers));
+      dispatch(toggleOptionByHighlight(clearOthers, true));
       return await dispatch(commitChangesToVariable());
     }
 
@@ -54,11 +45,15 @@ export const navigateOptions = (key: NavigationKey, clearOthers: boolean): Thunk
   };
 };
 
-export const filterOrSearchOptions = (searchQuery: string): ThunkResult<void> => {
+export const filterOrSearchOptions = (searchQuery = ''): ThunkResult<void> => {
   return async (dispatch, getState) => {
-    const { id } = getState().templating.optionsPicker;
-    const { query, options } = getVariable<VariableWithOptions>(id!, getState());
+    const { id, queryValue } = getState().templating.optionsPicker;
+    const { query, options } = getVariable<VariableWithOptions>(id, getState());
     dispatch(updateSearchQuery(searchQuery));
+
+    if (trim(queryValue) === trim(searchQuery)) {
+      return;
+    }
 
     if (containsSearchFilter(query)) {
       return searchForOptionsWithDebounce(dispatch, getState, searchQuery);
@@ -67,7 +62,13 @@ export const filterOrSearchOptions = (searchQuery: string): ThunkResult<void> =>
   };
 };
 
-export const commitChangesToVariable = (): ThunkResult<void> => {
+const setVariable = async (updated: VariableWithMultiSupport) => {
+  const adapter = variableAdapters.get(updated.type);
+  await adapter.setValue(updated, updated.current, true);
+  return;
+};
+
+export const commitChangesToVariable = (callback?: (updated: any) => void): ThunkResult<void> => {
   return async (dispatch, getState) => {
     const picker = getState().templating.optionsPicker;
     const existing = getVariable<VariableWithMultiSupport>(picker.id, getState());
@@ -77,64 +78,40 @@ export const commitChangesToVariable = (): ThunkResult<void> => {
     dispatch(setCurrentVariableValue(toVariablePayload(existing, currentPayload)));
     dispatch(changeVariableProp(toVariablePayload(existing, searchQueryPayload)));
     const updated = getVariable<VariableWithMultiSupport>(picker.id, getState());
+    dispatch(hideOptions());
 
-    if (existing.current.text === updated.current.text) {
-      return dispatch(hideOptions());
+    if (getCurrentText(existing) === getCurrentText(updated)) {
+      return;
     }
 
-    const adapter = variableAdapters.get(updated.type);
-    await adapter.setValue(updated, updated.current, true);
-    return dispatch(hideOptions());
+    if (callback) {
+      return callback(updated);
+    }
+
+    return await setVariable(updated);
   };
 };
 
-export const toggleOptionByHighlight = (clearOthers: boolean): ThunkResult<void> => {
-  return (dispatch, getState) => {
-    const { id, highlightIndex } = getState().templating.optionsPicker;
-    const variable = getVariable<VariableWithMultiSupport>(id, getState());
-    const option = variable.options[highlightIndex];
-    dispatch(toggleOption({ option, forceSelect: false, clearOthers }));
-  };
-};
+export const openOptions = ({ id }: VariableIdentifier, callback?: (updated: any) => void): ThunkResult<void> => async (
+  dispatch,
+  getState
+) => {
+  const picker = getState().templating.optionsPicker;
 
-export const toggleAndFetchTag = (tag: VariableTag): ThunkResult<void> => {
-  return async (dispatch, getState) => {
-    if (Array.isArray(tag.values)) {
-      return dispatch(toggleTag(tag));
-    }
-
-    const values = await dispatch(fetchTagValues(tag.text.toString()));
-    return dispatch(toggleTag({ ...tag, values }));
-  };
-};
-
-const fetchTagValues = (tagText: string): ThunkResult<Promise<string[]>> => {
-  return async (dispatch, getState) => {
-    const picker = getState().templating.optionsPicker;
-    const variable = getVariable<QueryVariableModel>(picker.id, getState());
-
-    const datasource = await getDataSourceSrv().get(variable.datasource ?? '');
-    const query = variable.tagValuesQuery.replace('$tag', tagText);
-    const options = { range: getTimeRange(variable), variable };
-
-    if (!datasource.metricFindQuery) {
-      return [];
-    }
-
-    const results = await datasource.metricFindQuery(query, options);
-
-    if (!Array.isArray(results)) {
-      return [];
-    }
-    return results.map(value => value.text);
-  };
-};
-
-const getTimeRange = (variable: QueryVariableModel) => {
-  if (variable.refresh === VariableRefresh.onTimeRangeChanged) {
-    return getTimeSrv().timeRange();
+  if (picker.id && picker.id !== id) {
+    await dispatch(commitChangesToVariable(callback));
   }
-  return undefined;
+
+  const variable = getVariable<VariableWithMultiSupport>(id, getState());
+  dispatch(showOptions(variable));
+};
+
+export const toggleOptionByHighlight = (clearOthers: boolean, forceSelect = false): ThunkResult<void> => {
+  return (dispatch, getState) => {
+    const { highlightIndex, options } = getState().templating.optionsPicker;
+    const option = options[highlightIndex];
+    dispatch(toggleOption({ option, forceSelect, clearOthers }));
+  };
 };
 
 const searchForOptions = async (dispatch: ThunkDispatch, getState: () => StoreState, searchQuery: string) => {
@@ -154,21 +131,21 @@ const searchForOptions = async (dispatch: ThunkDispatch, getState: () => StoreSt
 
 const searchForOptionsWithDebounce = debounce(searchForOptions, 500);
 
-function mapToCurrent(picker: OptionsPickerState): VariableOption | undefined {
-  const { options, queryValue: searchQuery, multi } = picker;
+export function mapToCurrent(picker: OptionsPickerState): VariableOption | undefined {
+  const { options, selectedValues, queryValue: searchQuery, multi } = picker;
 
   if (options.length === 0 && searchQuery && searchQuery.length > 0) {
     return { text: searchQuery, value: searchQuery, selected: false };
   }
 
   if (!multi) {
-    return options.find(o => o.selected);
+    return selectedValues.find((o) => o.selected);
   }
 
   const texts: string[] = [];
   const values: string[] = [];
 
-  for (const option of options) {
+  for (const option of selectedValues) {
     if (!option.selected) {
       continue;
     }
@@ -179,8 +156,7 @@ function mapToCurrent(picker: OptionsPickerState): VariableOption | undefined {
 
   return {
     value: values,
-    text: texts.join(' + '),
-    tags: picker.tags.filter(t => t.selected),
+    text: texts,
     selected: true,
   };
 }

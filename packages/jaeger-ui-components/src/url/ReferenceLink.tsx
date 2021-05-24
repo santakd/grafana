@@ -13,11 +13,11 @@
 // limitations under the License.
 
 import React from 'react';
-import { SpanReference } from '../types/trace';
+import { TraceSpanReference } from '../types/trace';
 import ExternalLinkContext from './externalLinkContext';
 
 type ReferenceLinkProps = {
-  reference: SpanReference;
+  reference: TraceSpanReference;
   children: React.ReactNode;
   className?: string;
   focusSpan: (spanID: string) => void;
@@ -37,7 +37,7 @@ export default function ReferenceLink(props: ReferenceLinkProps) {
 
   return (
     <ExternalLinkContext.Consumer>
-      {createLinkToExternalSpan => {
+      {(createLinkToExternalSpan) => {
         if (!createLinkToExternalSpan) {
           throw new Error("ExternalLinkContext does not have a value, you probably forgot to setup it's provider");
         }

@@ -1,29 +1,47 @@
 import React from 'react';
-import { Slider } from './Slider';
-import { select, number, boolean } from '@storybook/addon-knobs';
+import { Slider } from '@grafana/ui';
+import { SliderProps } from './types';
+import { Story, Meta } from '@storybook/react';
 
 export default {
   title: 'Forms/Slider',
   component: Slider,
-};
+  parameters: {
+    controls: {
+      exclude: ['step', 'formatTooltipResult', 'onChange', 'onAfterChange', 'value', 'tooltipAlwaysVisible'],
+    },
+    knobs: {
+      disabled: true,
+    },
+  },
+  argTypes: {
+    isStep: { name: 'Step' },
+    orientation: { control: { type: 'select', options: ['horizontal', 'vertical'] } },
+  },
+} as Meta;
 
-const getKnobs = () => {
-  return {
-    min: number('min', 0),
-    max: number('max', 100),
-    orientation: select('orientation', ['horizontal', 'vertical'], 'horizontal'),
-    reverse: boolean('reverse', true),
-    singleValue: boolean('single value', false),
-  };
-};
+interface StoryProps extends Partial<SliderProps> {
+  isStep: boolean;
+}
 
-const SliderWrapper = () => {
-  const { min, max, orientation, reverse, singleValue } = getKnobs();
+export const Basic: Story<StoryProps> = (args) => {
   return (
-    <div style={{ width: '200px', height: '200px' }}>
-      <Slider min={min} max={max} orientation={orientation} value={singleValue ? [10] : undefined} reverse={reverse} />
+    <div style={{ width: '300px', height: '300px' }}>
+      <Slider
+        step={args.isStep ? 10 : undefined}
+        value={args.value}
+        min={args.min as number}
+        max={args.max as number}
+        {...args}
+      />
     </div>
   );
 };
-
-export const basic = () => <SliderWrapper />;
+Basic.args = {
+  min: 0,
+  max: 100,
+  value: 10,
+  isStep: false,
+  orientation: 'horizontal',
+  reverse: false,
+};

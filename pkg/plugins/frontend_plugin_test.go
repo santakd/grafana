@@ -8,7 +8,6 @@ import (
 )
 
 func TestFrontendPlugin(t *testing.T) {
-
 	Convey("When setting paths based on App on Windows", t, func() {
 		setting.StaticRootPath = "c:\\grafana\\public"
 
@@ -27,7 +26,8 @@ func TestFrontendPlugin(t *testing.T) {
 				},
 			},
 		}
-		fp.setPathsBasedOnApp(app)
+		cfg := setting.NewCfg()
+		fp.setPathsBasedOnApp(app, cfg)
 
 		So(fp.Module, ShouldEqual, "app/plugins/app/testdata/datasources/datasource/module")
 	})

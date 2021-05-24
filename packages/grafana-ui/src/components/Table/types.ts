@@ -1,7 +1,7 @@
 import { CellProps } from 'react-table';
 import { Field } from '@grafana/data';
 import { TableStyles } from './styles';
-import { FC } from 'react';
+import { CSSProperties, FC } from 'react';
 
 export interface TableFieldOptions {
   width: number;
@@ -14,9 +14,12 @@ export enum TableCellDisplayMode {
   Auto = 'auto',
   ColorText = 'color-text',
   ColorBackground = 'color-background',
+  ColorBackgroundSolid = 'color-background-solid',
   GradientGauge = 'gradient-gauge',
   LcdGauge = 'lcd-gauge',
   JSONView = 'json-view',
+  BasicGauge = 'basic',
+  Image = 'image',
 }
 
 export type FieldTextAlignment = 'auto' | 'left' | 'right' | 'center';
@@ -25,7 +28,11 @@ export interface TableRow {
   [x: string]: any;
 }
 
-export type TableFilterActionCallback = (key: string, value: string) => void;
+export const FILTER_FOR_OPERATOR = '=';
+export const FILTER_OUT_OPERATOR = '!=';
+export type FilterOperator = typeof FILTER_FOR_OPERATOR | typeof FILTER_OUT_OPERATOR;
+export type FilterItem = { key: string; value: string; operator: FilterOperator };
+export type TableFilterActionCallback = (item: FilterItem) => void;
 export type TableColumnResizeActionCallback = (fieldDisplayName: string, width: number) => void;
 export type TableSortByActionCallback = (state: TableSortByFieldState[]) => void;
 
@@ -36,7 +43,10 @@ export interface TableSortByFieldState {
 
 export interface TableCellProps extends CellProps<any> {
   tableStyles: TableStyles;
+  cellProps: CSSProperties;
   field: Field;
+  onCellFilterAdded: TableFilterActionCallback;
+  innerWidth: number;
 }
 
 export type CellComponent = FC<TableCellProps>;

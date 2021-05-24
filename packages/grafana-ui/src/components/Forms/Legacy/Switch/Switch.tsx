@@ -1,7 +1,8 @@
 import React, { PureComponent } from 'react';
-import uniqueId from 'lodash/uniqueId';
+import { uniqueId } from 'lodash';
+import { Placement } from '@popperjs/core';
 import { Tooltip } from '../../../Tooltip/Tooltip';
-import * as PopperJS from 'popper.js';
+import { Icon } from '../../..';
 
 export interface Props {
   label: string;
@@ -10,7 +11,7 @@ export interface Props {
   labelClass?: string;
   switchClass?: string;
   tooltip?: string;
-  tooltipPlacement?: PopperJS.Placement;
+  tooltipPlacement?: Placement;
   transparent?: boolean;
   onChange: (event: React.SyntheticEvent<HTMLInputElement>) => void;
 }
@@ -54,7 +55,7 @@ export class Switch extends PureComponent<Props, State> {
               {tooltip && (
                 <Tooltip placement={tooltipPlacement ? tooltipPlacement : 'auto'} content={tooltip} theme={'info'}>
                   <div className="gf-form-help-icon gf-form-help-icon--right-normal">
-                    <i className="fa fa-info-circle" />
+                    <Icon name="info-circle" size="sm" style={{ marginLeft: '10px' }} />
                   </div>
                 </Tooltip>
               )}

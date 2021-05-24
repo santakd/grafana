@@ -13,7 +13,7 @@
 // limitations under the License.
 
 import React from 'react';
-import { css } from 'emotion';
+import { css } from '@emotion/css';
 
 import SpanDetail from './SpanDetail';
 import DetailState from './SpanDetail/DetailState';
@@ -21,7 +21,8 @@ import SpanTreeOffset from './SpanTreeOffset';
 import TimelineRow from './TimelineRow';
 import { autoColor, createStyle, Theme, withTheme } from '../Theme';
 
-import { Log, Span, KeyValuePair, Link } from '../types/trace';
+import { TraceLog, TraceSpan, TraceKeyValuePair, TraceLink } from '../types/trace';
+import { CreateSpanLink } from './types';
 
 const getStyles = createStyle((theme: Theme) => {
   return {
@@ -57,7 +58,7 @@ const getStyles = createStyle((theme: Theme) => {
       }
     `,
     infoWrapper: css`
-      background: ${autoColor(theme, '#f5f5f5')};
+      label: infoWrapper;
       border: 1px solid ${autoColor(theme, '#d3d3d3')};
       border-top: 3px solid;
       padding: 0.75rem;
@@ -70,13 +71,14 @@ type SpanDetailRowProps = {
   columnDivision: number;
   detailState: DetailState;
   onDetailToggled: (spanID: string) => void;
-  linksGetter: (span: Span, links: KeyValuePair[], index: number) => Link[];
-  logItemToggle: (spanID: string, log: Log) => void;
+  linksGetter: (span: TraceSpan, links: TraceKeyValuePair[], index: number) => TraceLink[];
+  logItemToggle: (spanID: string, log: TraceLog) => void;
   logsToggle: (spanID: string) => void;
   processToggle: (spanID: string) => void;
   referencesToggle: (spanID: string) => void;
   warningsToggle: (spanID: string) => void;
-  span: Span;
+  stackTracesToggle: (spanID: string) => void;
+  span: TraceSpan;
   tagsToggle: (spanID: string) => void;
   traceStartTime: number;
   focusSpan: (uiFind: string) => void;
@@ -84,6 +86,7 @@ type SpanDetailRowProps = {
   addHoverIndentGuideId: (spanID: string) => void;
   removeHoverIndentGuideId: (spanID: string) => void;
   theme: Theme;
+  createSpanLink?: CreateSpanLink;
 };
 
 export class UnthemedSpanDetailRow extends React.PureComponent<SpanDetailRowProps> {
@@ -91,7 +94,7 @@ export class UnthemedSpanDetailRow extends React.PureComponent<SpanDetailRowProp
     this.props.onDetailToggled(this.props.span.spanID);
   };
 
-  _linksGetter = (items: KeyValuePair[], itemIndex: number) => {
+  _linksGetter = (items: TraceKeyValuePair[], itemIndex: number) => {
     const { linksGetter, span } = this.props;
     return linksGetter(span, items, itemIndex);
   };
@@ -106,6 +109,7 @@ export class UnthemedSpanDetailRow extends React.PureComponent<SpanDetailRowProp
       processToggle,
       referencesToggle,
       warningsToggle,
+      stackTracesToggle,
       span,
       tagsToggle,
       traceStartTime,
@@ -114,11 +118,12 @@ export class UnthemedSpanDetailRow extends React.PureComponent<SpanDetailRowProp
       addHoverIndentGuideId,
       removeHoverIndentGuideId,
       theme,
+      createSpanLink,
     } = this.props;
     const styles = getStyles(theme);
     return (
       <TimelineRow>
-        <TimelineRow.Cell width={columnDivision}>
+        <TimelineRow.Cell width={columnDivision} style={{ overflow: 'hidden' }}>
           <SpanTreeOffset
             span={span}
             showChildrenIcon={false}
@@ -147,10 +152,12 @@ export class UnthemedSpanDetailRow extends React.PureComponent<SpanDetailRowProp
               processToggle={processToggle}
               referencesToggle={referencesToggle}
               warningsToggle={warningsToggle}
+              stackTracesToggle={stackTracesToggle}
               span={span}
               tagsToggle={tagsToggle}
               traceStartTime={traceStartTime}
               focusSpan={focusSpan}
+              createSpanLink={createSpanLink}
             />
           </div>
         </TimelineRow.Cell>

@@ -1,7 +1,8 @@
-import { VariableModel } from '../../templating/types';
+import { VariableModel } from '../types';
 
 export interface VariablePickerProps<Model extends VariableModel = VariableModel> {
   variable: Model;
+  onVariableChange?: (variable: Model) => void;
 }
 
 export enum NavigationKey {

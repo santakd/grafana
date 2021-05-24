@@ -11,45 +11,73 @@ import (
 	"github.com/grafana/grafana/pkg/services/alerting"
 )
 
+const (
+	sendTags    = "tags"
+	sendDetails = "details"
+	sendBoth    = "both"
+)
+
 func init() {
 	alerting.RegisterNotifier(&alerting.NotifierPlugin{
 		Type:        "opsgenie",
 		Name:        "OpsGenie",
 		Description: "Sends notifications to OpsGenie",
+		Heading:     "OpsGenie settings",
 		Factory:     NewOpsGenieNotifier,
-		OptionsTemplate: `
-      <h3 class="page-heading">OpsGenie settings</h3>
-      <div class="gf-form">
-        <span class="gf-form-label width-14">API Key</span>
-        <input type="text" required class="gf-form-input max-width-22" ng-model="ctrl.model.settings.apiKey" placeholder="OpsGenie API Key"></input>
-      </div>
-      <div class="gf-form">
-        <span class="gf-form-label width-14">Alert API Url</span>
-        <input type="text" required class="gf-form-input max-width-22" ng-model="ctrl.model.settings.apiUrl" placeholder="https://api.opsgenie.com/v2/alerts"></input>
-      </div>
-      <div class="gf-form">
-        <gf-form-switch
-           class="gf-form"
-           label="Auto close incidents"
-           label-class="width-14"
-           checked="ctrl.model.settings.autoClose"
-           tooltip="Automatically close alerts in OpsGenie once the alert goes back to ok.">
-        </gf-form-switch>
-      </div>
-      <div class="gf-form">
-        <gf-form-switch
-           class="gf-form"
-           label="Override priority"
-           label-class="width-14"
-           checked="ctrl.model.settings.overridePriority"
-           tooltip="Allow the alert priority to be set using the og_priority tag">
-        </gf-form-switch>
-  </div>
-`,
+		Options: []alerting.NotifierOption{
+			{
+				Label:        "API Key",
+				Element:      alerting.ElementTypeInput,
+				InputType:    alerting.InputTypeText,
+				Placeholder:  "OpsGenie API Key",
+				PropertyName: "apiKey",
+				Required:     true,
+				Secure:       true,
+			},
+			{
+				Label:        "Alert API Url",
+				Element:      alerting.ElementTypeInput,
+				InputType:    alerting.InputTypeText,
+				Placeholder:  "https://api.opsgenie.com/v2/alerts",
+				PropertyName: "apiUrl",
+				Required:     true,
+			},
+			{
+				Label:        "Auto close incidents",
+				Element:      alerting.ElementTypeCheckbox,
+				Description:  "Automatically close alerts in OpsGenie once the alert goes back to ok.",
+				PropertyName: "autoClose",
+			}, {
+				Label:        "Override priority",
+				Element:      alerting.ElementTypeCheckbox,
+				Description:  "Allow the alert priority to be set using the og_priority tag",
+				PropertyName: "overridePriority",
+			},
+			{
+				Label:   "Send notification tags as",
+				Element: alerting.ElementTypeSelect,
+				SelectOptions: []alerting.SelectOption{
+					{
+						Value: sendTags,
+						Label: "Tags",
+					},
+					{
+						Value: sendDetails,
+						Label: "Extra Properties",
+					},
+					{
+						Value: sendBoth,
+						Label: "Tags & Extra Properties",
+					},
+				},
+				Description:  "Send the notification tags to Opsgenie as either Extra Properties, Tags or both",
+				PropertyName: "sendTagsAs",
+			},
+		},
 	})
 }
 
-var (
+const (
 	opsgenieAlertURL = "https://api.opsgenie.com/v2/alerts"
 )
 
@@ -57,7 +85,7 @@ var (
 func NewOpsGenieNotifier(model *models.AlertNotification) (alerting.Notifier, error) {
 	autoClose := model.Settings.Get("autoClose").MustBool(true)
 	overridePriority := model.Settings.Get("overridePriority").MustBool(true)
-	apiKey := model.Settings.Get("apiKey").MustString()
+	apiKey := model.DecryptedValue("apiKey", model.Settings.Get("apiKey").MustString())
 	apiURL := model.Settings.Get("apiUrl").MustString()
 	if apiKey == "" {
 		return nil, alerting.ValidationError{Reason: "Could not find api key property in settings"}
@@ -66,12 +94,20 @@ func NewOpsGenieNotifier(model *models.AlertNotification) (alerting.Notifier, er
 		apiURL = opsgenieAlertURL
 	}
 
+	sendTagsAs := model.Settings.Get("sendTagsAs").MustString(sendTags)
+	if sendTagsAs != sendTags && sendTagsAs != sendDetails && sendTagsAs != sendBoth {
+		return nil, alerting.ValidationError{
+			Reason: fmt.Sprintf("Invalid value for sendTagsAs: %q", sendTagsAs),
+		}
+	}
+
 	return &OpsGenieNotifier{
 		NotifierBase:     NewNotifierBase(model),
 		APIKey:           apiKey,
 		APIUrl:           apiURL,
 		AutoClose:        autoClose,
 		OverridePriority: overridePriority,
+		SendTagsAs:       sendTagsAs,
 		log:              log.New("alerting.notifier.opsgenie"),
 	}, nil
 }
@@ -84,6 +120,7 @@ type OpsGenieNotifier struct {
 	APIUrl           string
 	AutoClose        bool
 	OverridePriority bool
+	SendTagsAs       string
 	log              log.Logger
 }
 
@@ -97,6 +134,8 @@ func (on *OpsGenieNotifier) Notify(evalContext *alerting.EvalContext) error {
 		}
 	case models.AlertStateAlerting:
 		err = on.createAlert(evalContext)
+	default:
+		// Handle other cases?
 	}
 	return err
 }
@@ -112,7 +151,7 @@ func (on *OpsGenieNotifier) createAlert(evalContext *alerting.EvalContext) error
 
 	customData := triggMetrString
 	for _, evt := range evalContext.EvalMatches {
-		customData = customData + fmt.Sprintf("%s: %v\n", evt.Metric, evt.Value)
+		customData += fmt.Sprintf("%s: %v\n", evt.Metric, evt.Value)
 	}
 
 	bodyJSON := simplejson.New()
@@ -127,14 +166,18 @@ func (on *OpsGenieNotifier) createAlert(evalContext *alerting.EvalContext) error
 		details.Set("image", evalContext.ImagePublicURL)
 	}
 
-	bodyJSON.Set("details", details)
-
 	tags := make([]string, 0)
 	for _, tag := range evalContext.Rule.AlertRuleTags {
-		if len(tag.Value) > 0 {
-			tags = append(tags, fmt.Sprintf("%s:%s", tag.Key, tag.Value))
-		} else {
-			tags = append(tags, tag.Key)
+		if on.sendDetails() {
+			details.Set(tag.Key, tag.Value)
+		}
+
+		if on.sendTags() {
+			if len(tag.Value) > 0 {
+				tags = append(tags, fmt.Sprintf("%s:%s", tag.Key, tag.Value))
+			} else {
+				tags = append(tags, tag.Key)
+			}
 		}
 		if tag.Key == "og_priority" {
 			if on.OverridePriority {
@@ -146,6 +189,7 @@ func (on *OpsGenieNotifier) createAlert(evalContext *alerting.EvalContext) error
 		}
 	}
 	bodyJSON.Set("tags", tags)
+	bodyJSON.Set("details", details)
 
 	body, _ := bodyJSON.MarshalJSON()
 
@@ -189,4 +233,12 @@ func (on *OpsGenieNotifier) closeAlert(evalContext *alerting.EvalContext) error 
 	}
 
 	return nil
+}
+
+func (on *OpsGenieNotifier) sendDetails() bool {
+	return on.SendTagsAs == sendDetails || on.SendTagsAs == sendBoth
+}
+
+func (on *OpsGenieNotifier) sendTags() bool {
+	return on.SendTagsAs == sendTags || on.SendTagsAs == sendBoth
 }

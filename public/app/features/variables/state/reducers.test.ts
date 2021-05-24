@@ -1,10 +1,9 @@
 import { reducerTester } from '../../../../test/core/redux/reducerTester';
-import { cleanUpDashboard } from 'app/features/dashboard/state/reducers';
-import { QueryVariableModel, VariableHide } from '../../templating/types';
+import { initialVariableModelState, QueryVariableModel } from '../types';
 import { VariableAdapter, variableAdapters } from '../adapters';
 import { createAction } from '@reduxjs/toolkit';
-import { variablesReducer, VariablesState } from './variablesReducer';
-import { toVariablePayload, VariablePayload } from './types';
+import { cleanVariables, variablesReducer } from './variablesReducer';
+import { VariablesState, toVariablePayload, VariablePayload } from './types';
 import { VariableType } from '@grafana/data';
 
 const variableAdapter: VariableAdapter<QueryVariableModel> = {
@@ -30,67 +29,61 @@ describe('variablesReducer', () => {
     it('then all variables except global variables should be removed', () => {
       const initialState: VariablesState = {
         '0': {
+          ...initialVariableModelState,
           id: '0',
+          index: 0,
           type: 'query',
           name: 'Name-0',
-          hide: VariableHide.dontHide,
-          index: 0,
           label: 'Label-0',
-          skipUrlSync: false,
         },
         '1': {
+          ...initialVariableModelState,
           id: '1',
+          index: 1,
           type: 'query',
           name: 'Name-1',
-          hide: VariableHide.dontHide,
-          index: 1,
           label: 'Label-1',
-          skipUrlSync: false,
           global: true,
         },
         '2': {
+          ...initialVariableModelState,
           id: '2',
+          index: 2,
           type: 'query',
           name: 'Name-2',
-          hide: VariableHide.dontHide,
-          index: 2,
           label: 'Label-2',
-          skipUrlSync: false,
         },
         '3': {
+          ...initialVariableModelState,
           id: '3',
+          index: 3,
           type: 'query',
           name: 'Name-3',
-          hide: VariableHide.dontHide,
-          index: 3,
           label: 'Label-3',
-          skipUrlSync: false,
           global: true,
         },
       };
 
       reducerTester<VariablesState>()
         .givenReducer(variablesReducer, initialState)
-        .whenActionIsDispatched(cleanUpDashboard())
+        .whenActionIsDispatched(cleanVariables())
         .thenStateShouldEqual({
           '1': {
+            ...initialVariableModelState,
             id: '1',
+            index: 1,
             type: 'query',
             name: 'Name-1',
-            hide: VariableHide.dontHide,
-            index: 1,
             label: 'Label-1',
-            skipUrlSync: false,
             global: true,
           },
           '3': {
+            ...initialVariableModelState,
             id: '3',
+            index: 3,
             type: 'query',
             name: 'Name-3',
-            hide: VariableHide.dontHide,
-            index: 3,
             label: 'Label-3',
-            skipUrlSync: false,
             global: true,
           },
         });
@@ -101,13 +94,12 @@ describe('variablesReducer', () => {
     it('then the reducer for that variableAdapter should be invoked', () => {
       const initialState: VariablesState = {
         '0': {
+          ...initialVariableModelState,
           id: '0',
+          index: 0,
           type: 'query',
           name: 'Name-0',
-          hide: VariableHide.dontHide,
-          index: 0,
           label: 'Label-0',
-          skipUrlSync: false,
         },
       };
       variableAdapters.get('mock').reducer = jest.fn().mockReturnValue(initialState);
@@ -128,13 +120,12 @@ describe('variablesReducer', () => {
     it('then the reducer for that variableAdapter should be invoked', () => {
       const initialState: VariablesState = {
         '0': {
+          ...initialVariableModelState,
           id: '0',
+          index: 0,
           type: 'query',
           name: 'Name-0',
-          hide: VariableHide.dontHide,
-          index: 0,
           label: 'Label-0',
-          skipUrlSync: false,
         },
       };
       variableAdapters.get('mock').reducer = jest.fn().mockReturnValue(initialState);
@@ -151,13 +142,12 @@ describe('variablesReducer', () => {
     it('then the reducer for that variableAdapter should be invoked', () => {
       const initialState: VariablesState = {
         '0': {
+          ...initialVariableModelState,
           id: '0',
+          index: 0,
           type: 'query',
           name: 'Name-0',
-          hide: VariableHide.dontHide,
-          index: 0,
           label: 'Label-0',
-          skipUrlSync: false,
         },
       };
       variableAdapters.get('mock').reducer = jest.fn().mockReturnValue(initialState);

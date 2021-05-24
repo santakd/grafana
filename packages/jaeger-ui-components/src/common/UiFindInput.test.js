@@ -14,12 +14,15 @@
 
 import * as React from 'react';
 import { shallow } from 'enzyme';
-import debounceMock from 'lodash/debounce';
+// eslint-disable-next-line lodash/import-scope
+import _ from 'lodash';
 
 import UiFindInput from './UiFindInput';
-import {UIInput} from "../uiElementsContext";
+import { UIInput } from '../uiElementsContext';
 
-jest.mock('lodash/debounce');
+const debounceMock = jest.spyOn(_, 'debounce').mockImplementation((func) => {
+  return Object.assign(func, { cancel: jest.fn(), flush: jest.fn() });
+});
 
 describe('UiFindInput', () => {
   const flushMock = jest.fn();
@@ -38,7 +41,7 @@ describe('UiFindInput', () => {
   let wrapper;
 
   beforeAll(() => {
-    debounceMock.mockImplementation(fn => {
+    debounceMock.mockImplementation((fn) => {
       function debounceFunction(...args) {
         fn(...args);
       }
@@ -58,8 +61,8 @@ describe('UiFindInput', () => {
     });
 
     it('renders props.uiFind when state.ownInputValue is `undefined`', () => {
-      wrapper.setProps({value: uiFind});
+      wrapper.setProps({ value: uiFind });
       expect(wrapper.find(UIInput).prop('value')).toBe(uiFind);
     });
-  })
+  });
 });

@@ -1,20 +1,28 @@
-import merge from 'lodash/merge';
-import { getTheme } from '@grafana/ui';
+import { merge } from 'lodash';
 import {
-  DataSourceInstanceSettings,
-  GrafanaTheme,
-  GrafanaThemeType,
-  PanelPluginMeta,
-  GrafanaConfig,
-  LicenseInfo,
   BuildInfo,
+  createTheme,
+  DataSourceInstanceSettings,
   FeatureToggles,
+  GrafanaConfig,
+  GrafanaTheme,
+  GrafanaTheme2,
+  LicenseInfo,
+  PanelPluginMeta,
+  systemDateFormats,
+  SystemDateFormatSettings,
 } from '@grafana/data';
+
+export interface AzureSettings {
+  cloud?: string;
+  managedIdentityEnabled: boolean;
+}
 
 export class GrafanaBootConfig implements GrafanaConfig {
   datasources: { [str: string]: DataSourceInstanceSettings } = {};
   panels: { [key: string]: PanelPluginMeta } = {};
   minRefreshInterval = '';
+  appUrl = '';
   appSubUrl = '';
   windowTitlePrefix = '';
   buildInfo: BuildInfo = {} as BuildInfo;
@@ -33,6 +41,7 @@ export class GrafanaBootConfig implements GrafanaConfig {
   authProxyEnabled = false;
   exploreEnabled = false;
   ldapEnabled = false;
+  sigV4AuthEnabled = false;
   samlEnabled = false;
   autoAssignOrg = true;
   verifyEmailEnabled = false;
@@ -46,19 +55,39 @@ export class GrafanaBootConfig implements GrafanaConfig {
   editorsCanAdmin = false;
   disableSanitizeHtml = false;
   theme: GrafanaTheme;
+  theme2: GrafanaTheme2;
   pluginsToPreload: string[] = [];
   featureToggles: FeatureToggles = {
-    transformations: false,
-    expressions: false,
-    newEdit: false,
     meta: false,
-    newVariables: true,
+    ngalert: false,
+    reportVariables: false,
+    accesscontrol: false,
+    trimDefaults: false,
   };
   licenseInfo: LicenseInfo = {} as LicenseInfo;
   rendererAvailable = false;
+  http2Enabled = false;
+  dateFormats?: SystemDateFormatSettings;
+  sentry = {
+    enabled: false,
+    dsn: '',
+    customEndpoint: '',
+    sampleRate: 1,
+  };
+  pluginCatalogURL = 'https://grafana.com/grafana/plugins/';
+  pluginAdminEnabled = false;
+  expressionsEnabled = false;
+  customTheme?: any;
+  awsAllowedAuthProviders: string[] = [];
+  awsAssumeRoleEnabled = false;
+  azure: AzureSettings = {
+    managedIdentityEnabled: false,
+  };
 
   constructor(options: GrafanaBootConfig) {
-    this.theme = options.bootData.user.lightTheme ? getTheme(GrafanaThemeType.Light) : getTheme(GrafanaThemeType.Dark);
+    const mode = options.bootData.user.lightTheme ? 'light' : 'dark';
+    this.theme2 = createTheme({ colors: { mode } });
+    this.theme = this.theme2.v1;
 
     const defaults = {
       datasources: {},
@@ -67,6 +96,7 @@ export class GrafanaBootConfig implements GrafanaConfig {
       newPanelTitle: 'Panel Title',
       playlist_timespan: '1m',
       unsaved_changes_warning: true,
+      appUrl: '',
       appSubUrl: '',
       buildInfo: {
         version: 'v1.0',
@@ -80,6 +110,10 @@ export class GrafanaBootConfig implements GrafanaConfig {
     };
 
     merge(this, defaults, options);
+
+    if (this.dateFormats) {
+      systemDateFormats.update(this.dateFormats);
+    }
   }
 }
 

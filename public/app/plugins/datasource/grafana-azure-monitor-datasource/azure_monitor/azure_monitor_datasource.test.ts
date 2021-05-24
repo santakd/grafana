@@ -1,29 +1,36 @@
 import AzureMonitorDatasource from '../datasource';
 
 import { TemplateSrv } from 'app/features/templating/template_srv';
-import { toUtc, DataFrame, getFrameDisplayName } from '@grafana/data';
+import { DataSourceInstanceSettings } from '@grafana/data';
 import { backendSrv } from 'app/core/services/backend_srv'; // will use the version in __mocks__
+import { AzureDataSourceJsonData } from '../types';
+
+const templateSrv = new TemplateSrv();
 
 jest.mock('@grafana/runtime', () => ({
-  ...jest.requireActual('@grafana/runtime'),
+  ...((jest.requireActual('@grafana/runtime') as unknown) as object),
   getBackendSrv: () => backendSrv,
+  getTemplateSrv: () => templateSrv,
 }));
 
+interface TestContext {
+  instanceSettings: DataSourceInstanceSettings<AzureDataSourceJsonData>;
+  ds: AzureMonitorDatasource;
+}
+
 describe('AzureMonitorDatasource', () => {
-  const ctx: any = {
-    templateSrv: new TemplateSrv(),
-  };
+  const ctx: TestContext = {} as TestContext;
   const datasourceRequestMock = jest.spyOn(backendSrv, 'datasourceRequest');
 
   beforeEach(() => {
     jest.clearAllMocks();
-    ctx.instanceSettings = {
+    ctx.instanceSettings = ({
+      name: 'test',
       url: 'http://azuremonitor.com',
       jsonData: { subscriptionId: '9935389e-9122-4ef9-95f9-1513dd24753f' },
       cloudName: 'azuremonitor',
-    };
-
-    ctx.ds = new AzureMonitorDatasource(ctx.instanceSettings, ctx.templateSrv);
+    } as unknown) as DataSourceInstanceSettings<AzureDataSourceJsonData>;
+    ctx.ds = new AzureMonitorDatasource(ctx.instanceSettings);
   });
 
   describe('When performing testDatasource', () => {
@@ -78,74 +85,6 @@ describe('AzureMonitorDatasource', () => {
     });
   });
 
-  describe('When performing query', () => {
-    const options = {
-      range: {
-        from: toUtc('2017-08-22T20:00:00Z'),
-        to: toUtc('2017-08-22T23:59:00Z'),
-      },
-      targets: [
-        {
-          apiVersion: '2018-01-01',
-          refId: 'A',
-          queryType: 'Azure Monitor',
-          azureMonitor: {
-            resourceGroup: 'testRG',
-            resourceName: 'testRN',
-            metricDefinition: 'Microsoft.Compute/virtualMachines',
-            metricNamespace: 'default',
-            metricName: 'Percentage CPU',
-            timeGrain: 'PT1H',
-            alias: '{{metric}}',
-          },
-        },
-      ],
-    };
-
-    const response: any = {
-      results: {
-        A: {
-          refId: 'A',
-          meta: {
-            rawQuery:
-              'aggregation=Average&api-version=2018-01-01&interval=PT1M' +
-              '&metricnames=Percentage+CPU&timespan=2019-05-19T15%3A11%3A37Z%2F2019-05-19T21%3A11%3A37Z',
-            unit: 'Percent',
-          },
-          series: [
-            {
-              name: 'Percentage CPU',
-              points: [
-                [2.2075, 1558278660000],
-                [2.29, 1558278720000],
-              ],
-            },
-          ],
-          tables: null,
-        },
-      },
-    };
-
-    beforeEach(() => {
-      datasourceRequestMock.mockImplementation((options: { url: string }) => {
-        expect(options.url).toContain('/api/tsdb/query');
-        return Promise.resolve({ data: response, status: 200 });
-      });
-    });
-
-    it('should return a list of datapoints', () => {
-      return ctx.ds.query(options).then((results: any) => {
-        expect(results.data.length).toBe(1);
-        const data = results.data[0] as DataFrame;
-        expect(getFrameDisplayName(data)).toEqual('Percentage CPU');
-        expect(data.fields[0].values.get(0)).toEqual(1558278660000);
-        expect(data.fields[1].values.get(0)).toEqual(2.2075);
-        expect(data.fields[0].values.get(1)).toEqual(1558278720000);
-        expect(data.fields[1].values.get(1)).toEqual(2.29);
-      });
-    });
-  });
-
   describe('When performing metricFindQuery', () => {
     describe('with a subscriptions query', () => {
       const response = {
@@ -163,14 +102,13 @@ describe('AzureMonitorDatasource', () => {
         datasourceRequestMock.mockImplementation(() => Promise.resolve(response));
       });
 
-      it('should return a list of subscriptions', () => {
-        return ctx.ds.metricFindQuery('subscriptions()').then((results: Array<{ text: string; value: string }>) => {
-          expect(results.length).toBe(2);
-          expect(results[0].text).toBe('Primary - sub1');
-          expect(results[0].value).toBe('sub1');
-          expect(results[1].text).toBe('Secondary - sub2');
-          expect(results[1].value).toBe('sub2');
-        });
+      it('should return a list of subscriptions', async () => {
+        const results = await ctx.ds.metricFindQuery('subscriptions()');
+        expect(results.length).toBe(2);
+        expect(results[0].text).toBe('Primary');
+        expect(results[0].value).toBe('sub1');
+        expect(results[1].text).toBe('Secondary');
+        expect(results[1].value).toBe('sub2');
       });
     });
 
@@ -187,14 +125,13 @@ describe('AzureMonitorDatasource', () => {
         datasourceRequestMock.mockImplementation(() => Promise.resolve(response));
       });
 
-      it('should return a list of resource groups', () => {
-        return ctx.ds.metricFindQuery('ResourceGroups()').then((results: Array<{ text: string; value: string }>) => {
-          expect(results.length).toBe(2);
-          expect(results[0].text).toBe('grp1');
-          expect(results[0].value).toBe('grp1');
-          expect(results[1].text).toBe('grp2');
-          expect(results[1].value).toBe('grp2');
-        });
+      it('should return a list of resource groups', async () => {
+        const results = await ctx.ds.metricFindQuery('ResourceGroups()');
+        expect(results.length).toBe(2);
+        expect(results[0].text).toBe('grp1');
+        expect(results[0].value).toBe('grp1');
+        expect(results[1].text).toBe('grp2');
+        expect(results[1].value).toBe('grp2');
       });
     });
 
@@ -214,16 +151,13 @@ describe('AzureMonitorDatasource', () => {
         });
       });
 
-      it('should return a list of resource groups', () => {
-        return ctx.ds
-          .metricFindQuery('ResourceGroups(11112222-eeee-4949-9b2d-9106972f9123)')
-          .then((results: Array<{ text: string; value: string }>) => {
-            expect(results.length).toBe(2);
-            expect(results[0].text).toBe('grp1');
-            expect(results[0].value).toBe('grp1');
-            expect(results[1].text).toBe('grp2');
-            expect(results[1].value).toBe('grp2');
-          });
+      it('should return a list of resource groups', async () => {
+        const results = await ctx.ds.metricFindQuery('ResourceGroups(11112222-eeee-4949-9b2d-9106972f9123)');
+        expect(results.length).toBe(2);
+        expect(results[0].text).toBe('grp1');
+        expect(results[0].value).toBe('grp1');
+        expect(results[1].text).toBe('grp2');
+        expect(results[1].value).toBe('grp2');
       });
     });
 
@@ -250,14 +184,11 @@ describe('AzureMonitorDatasource', () => {
         });
       });
 
-      it('should return a list of namespaces', () => {
-        return ctx.ds
-          .metricFindQuery('Namespaces(nodesapp)')
-          .then((results: Array<{ text: string; value: string }>) => {
-            expect(results.length).toEqual(1);
-            expect(results[0].text).toEqual('Microsoft.Network/networkInterfaces');
-            expect(results[0].value).toEqual('Microsoft.Network/networkInterfaces');
-          });
+      it('should return a list of namespaces', async () => {
+        const results = await ctx.ds.metricFindQuery('Namespaces(nodesapp)');
+        expect(results.length).toEqual(1);
+        expect(results[0].text).toEqual('Microsoft.Network/networkInterfaces');
+        expect(results[0].value).toEqual('Microsoft.Network/networkInterfaces');
       });
     });
 
@@ -284,14 +215,11 @@ describe('AzureMonitorDatasource', () => {
         });
       });
 
-      it('should return a list of namespaces', () => {
-        return ctx.ds
-          .metricFindQuery('namespaces(11112222-eeee-4949-9b2d-9106972f9123, nodesapp)')
-          .then((results: Array<{ text: string; value: string }>) => {
-            expect(results.length).toEqual(1);
-            expect(results[0].text).toEqual('Microsoft.Network/networkInterfaces');
-            expect(results[0].value).toEqual('Microsoft.Network/networkInterfaces');
-          });
+      it('should return a list of namespaces', async () => {
+        const results = await ctx.ds.metricFindQuery('namespaces(11112222-eeee-4949-9b2d-9106972f9123, nodesapp)');
+        expect(results.length).toEqual(1);
+        expect(results[0].text).toEqual('Microsoft.Network/networkInterfaces');
+        expect(results[0].value).toEqual('Microsoft.Network/networkInterfaces');
       });
     });
 
@@ -322,14 +250,11 @@ describe('AzureMonitorDatasource', () => {
         });
       });
 
-      it('should return a list of resource names', () => {
-        return ctx.ds
-          .metricFindQuery('resourceNames(nodeapp, microsoft.insights/components )')
-          .then((results: Array<{ text: string; value: string }>) => {
-            expect(results.length).toEqual(1);
-            expect(results[0].text).toEqual('nodeapp');
-            expect(results[0].value).toEqual('nodeapp');
-          });
+      it('should return a list of resource names', async () => {
+        const results = await ctx.ds.metricFindQuery('resourceNames(nodeapp, microsoft.insights/components )');
+        expect(results.length).toEqual(1);
+        expect(results[0].text).toEqual('nodeapp');
+        expect(results[0].value).toEqual('nodeapp');
       });
     });
 
@@ -408,17 +333,16 @@ describe('AzureMonitorDatasource', () => {
         });
       });
 
-      it('should return a list of metric names', () => {
-        return ctx.ds
-          .metricFindQuery('Metricnames(nodeapp, microsoft.insights/components, rn, default)')
-          .then((results: Array<{ text: string; value: string }>) => {
-            expect(results.length).toEqual(2);
-            expect(results[0].text).toEqual('Percentage CPU');
-            expect(results[0].value).toEqual('Percentage CPU');
+      it('should return a list of metric names', async () => {
+        const results = await ctx.ds.metricFindQuery(
+          'Metricnames(nodeapp, microsoft.insights/components, rn, default)'
+        );
+        expect(results.length).toEqual(2);
+        expect(results[0].text).toEqual('Percentage CPU');
+        expect(results[0].value).toEqual('Percentage CPU');
 
-            expect(results[1].text).toEqual('Used capacity');
-            expect(results[1].value).toEqual('UsedCapacity');
-          });
+        expect(results[1].text).toEqual('Used capacity');
+        expect(results[1].value).toEqual('UsedCapacity');
       });
     });
 
@@ -457,19 +381,16 @@ describe('AzureMonitorDatasource', () => {
         });
       });
 
-      it('should return a list of metric names', () => {
-        return ctx.ds
-          .metricFindQuery(
-            'Metricnames(11112222-eeee-4949-9b2d-9106972f9123, nodeapp, microsoft.insights/components, rn, default)'
-          )
-          .then((results: Array<{ text: string; value: string }>) => {
-            expect(results.length).toEqual(2);
-            expect(results[0].text).toEqual('Percentage CPU');
-            expect(results[0].value).toEqual('Percentage CPU');
+      it('should return a list of metric names', async () => {
+        const results = await ctx.ds.metricFindQuery(
+          'Metricnames(11112222-eeee-4949-9b2d-9106972f9123, nodeapp, microsoft.insights/components, rn, default)'
+        );
+        expect(results.length).toEqual(2);
+        expect(results[0].text).toEqual('Percentage CPU');
+        expect(results[0].value).toEqual('Percentage CPU');
 
-            expect(results[1].text).toEqual('Used capacity');
-            expect(results[1].value).toEqual('UsedCapacity');
-          });
+        expect(results[1].text).toEqual('Used capacity');
+        expect(results[1].value).toEqual('UsedCapacity');
       });
     });
 
@@ -507,17 +428,14 @@ describe('AzureMonitorDatasource', () => {
         });
       });
 
-      it('should return a list of metric names', () => {
-        return ctx.ds
-          .metricFindQuery('Metricnamespace(nodeapp, Microsoft.Compute/virtualMachines, rn)')
-          .then((results: Array<{ text: string; value: string }>) => {
-            expect(results.length).toEqual(2);
-            expect(results[0].text).toEqual('Microsoft.Compute-virtualMachines');
-            expect(results[0].value).toEqual('Microsoft.Compute/virtualMachines');
+      it('should return a list of metric names', async () => {
+        const results = await ctx.ds.metricFindQuery('Metricnamespace(nodeapp, Microsoft.Compute/virtualMachines, rn)');
+        expect(results.length).toEqual(2);
+        expect(results[0].text).toEqual('Microsoft.Compute-virtualMachines');
+        expect(results[0].value).toEqual('Microsoft.Compute/virtualMachines');
 
-            expect(results[1].text).toEqual('Telegraf-mem');
-            expect(results[1].value).toEqual('Telegraf/mem');
-          });
+        expect(results[1].text).toEqual('Telegraf-mem');
+        expect(results[1].value).toEqual('Telegraf/mem');
       });
     });
 
@@ -555,19 +473,16 @@ describe('AzureMonitorDatasource', () => {
         });
       });
 
-      it('should return a list of metric namespaces', () => {
-        return ctx.ds
-          .metricFindQuery(
-            'Metricnamespace(11112222-eeee-4949-9b2d-9106972f9123, nodeapp, Microsoft.Compute/virtualMachines, rn)'
-          )
-          .then((results: Array<{ text: string; value: string }>) => {
-            expect(results.length).toEqual(2);
-            expect(results[0].text).toEqual('Microsoft.Compute-virtualMachines');
-            expect(results[0].value).toEqual('Microsoft.Compute/virtualMachines');
+      it('should return a list of metric namespaces', async () => {
+        const results = await ctx.ds.metricFindQuery(
+          'Metricnamespace(11112222-eeee-4949-9b2d-9106972f9123, nodeapp, Microsoft.Compute/virtualMachines, rn)'
+        );
+        expect(results.length).toEqual(2);
+        expect(results[0].text).toEqual('Microsoft.Compute-virtualMachines');
+        expect(results[0].value).toEqual('Microsoft.Compute/virtualMachines');
 
-            expect(results[1].text).toEqual('Telegraf-mem');
-            expect(results[1].value).toEqual('Telegraf/mem');
-          });
+        expect(results[1].text).toEqual('Telegraf-mem');
+        expect(results[1].value).toEqual('Telegraf/mem');
       });
     });
   });
@@ -606,7 +521,7 @@ describe('AzureMonitorDatasource', () => {
     it('should return list of Resource Groups', () => {
       return ctx.ds.getSubscriptions().then((results: Array<{ text: string; value: string }>) => {
         expect(results.length).toEqual(1);
-        expect(results[0].text).toEqual('Primary Subscription - 99999999-cccc-bbbb-aaaa-9106972f9572');
+        expect(results[0].text).toEqual('Primary Subscription');
         expect(results[0].value).toEqual('99999999-cccc-bbbb-aaaa-9106972f9572');
       });
     });
@@ -626,7 +541,7 @@ describe('AzureMonitorDatasource', () => {
     });
 
     it('should return list of Resource Groups', () => {
-      return ctx.ds.getResourceGroups().then((results: Array<{ text: string; value: string }>) => {
+      return ctx.ds.getResourceGroups('subscriptionId').then((results: Array<{ text: string; value: string }>) => {
         expect(results.length).toEqual(2);
         expect(results[0].text).toEqual('grp1');
         expect(results[0].value).toEqual('grp1');
@@ -917,10 +832,10 @@ describe('AzureMonitorDatasource', () => {
           'default',
           'UsedCapacity'
         )
-        .then((results: any) => {
+        .then((results) => {
           expect(results.primaryAggType).toEqual('Total');
           expect(results.supportedAggTypes.length).toEqual(6);
-          expect(results.supportedTimeGrains.length).toEqual(4);
+          expect(results.supportedTimeGrains.length).toEqual(5); // 4 time grains from the API + auto
         });
     });
   });
@@ -992,11 +907,22 @@ describe('AzureMonitorDatasource', () => {
           'Transactions'
         )
         .then((results: any) => {
-          expect(results.dimensions.length).toEqual(4);
-          expect(results.dimensions[0].text).toEqual('None');
-          expect(results.dimensions[0].value).toEqual('None');
-          expect(results.dimensions[1].text).toEqual('Response type');
-          expect(results.dimensions[1].value).toEqual('ResponseType');
+          expect(results.dimensions).toMatchInlineSnapshot(`
+            Array [
+              Object {
+                "label": "Response type",
+                "value": "ResponseType",
+              },
+              Object {
+                "label": "Geo type",
+                "value": "GeoType",
+              },
+              Object {
+                "label": "API name",
+                "value": "ApiName",
+              },
+            ]
+          `);
         });
     });
 

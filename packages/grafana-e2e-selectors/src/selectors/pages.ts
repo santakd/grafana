@@ -1,3 +1,5 @@
+import { Components } from './components';
+
 export const Pages = {
   Login: {
     url: '/login',
@@ -6,12 +8,15 @@ export const Pages = {
     submit: 'Login button',
     skip: 'Skip change password button',
   },
+  Home: {
+    url: '/',
+  },
   DataSource: {
     name: 'Data source settings page name input field',
     delete: 'Data source settings page Delete button',
+    readOnly: 'Data source settings page read only message',
     saveAndTest: 'Data source settings page Save and Test button',
     alert: 'Data source settings page Alert',
-    alertMessage: 'Data source settings page Alert message',
   },
   DataSources: {
     url: '/datasources',
@@ -30,11 +35,11 @@ export const Pages = {
   },
   Dashboard: {
     url: (uid: string) => `/d/${uid}`,
-    Toolbar: {
-      toolbarItems: (button: string) => `Dashboard navigation bar button ${button}`,
-      navBar: () => '.navbar',
+    DashNav: {
+      nav: 'Dashboard navigation',
     },
     SubMenu: {
+      submenu: 'Dashboard submenu',
       submenuItem: 'Dashboard template variables submenu item',
       submenuItemLabels: (item: string) => `Dashboard template variables submenu Label ${item}`,
       submenuItemValueDropDownValueLinkTexts: (item: string) =>
@@ -49,11 +54,17 @@ export const Pages = {
         sectionItems: (item: string) => `Dashboard settings section item ${item}`,
         saveDashBoard: 'Dashboard settings aside actions Save button',
         saveAsDashBoard: 'Dashboard settings aside actions Save As button',
+        timezone: 'Time zone picker select container',
         title: 'Dashboard settings page title',
+      },
+      Annotations: {
+        List: {
+          addAnnotationCTA: Components.CallToActionCard.button('Add Annotation Query'),
+        },
       },
       Variables: {
         List: {
-          addVariableCTA: 'Call to action button Add variable',
+          addVariableCTA: Components.CallToActionCard.button('Add variable'),
           newButton: 'Variable editor New variable button',
           table: 'Variable editor Table',
           tableRowNameFields: (variableName: string) => `Variable editor Table Name field ${variableName}`,
@@ -76,11 +87,10 @@ export const Pages = {
             selectionOptionsIncludeAllSwitch: 'Variable editor Form IncludeAll switch',
             selectionOptionsCustomAllInput: 'Variable editor Form IncludeAll field',
             previewOfValuesOption: 'Variable editor Preview of Values option',
-            addButton: 'Variable editor Add button',
-            updateButton: 'Variable editor Update button',
+            submitButton: 'Variable editor Submit button',
           },
           QueryVariable: {
-            queryOptionsDataSourceSelect: 'Variable editor Form Query DataSource select',
+            queryOptionsDataSourceSelect: Components.DataSourcePicker.container,
             queryOptionsRefreshSelect: 'Variable editor Form Query Refresh select',
             queryOptionsRegExInput: 'Variable editor Form Query RegEx field',
             queryOptionsSortSelect: 'Variable editor Form Query Sort select',
@@ -91,6 +101,9 @@ export const Pages = {
           },
           ConstantVariable: {
             constantOptionsQueryInput: 'Variable editor Form Constant Query field',
+          },
+          TextBoxVariable: {
+            textBoxOptionsQueryInput: 'Variable editor Form TextBox Query field',
           },
         },
       },
@@ -116,7 +129,35 @@ export const Pages = {
     url: '/explore',
     General: {
       container: 'Explore',
-      runButton: 'Run button',
+      graph: 'Explore Graph',
+      table: 'Explore Table',
+      scrollBar: () => '.scrollbar-view',
     },
+    Toolbar: {
+      navBar: () => '.explore-toolbar',
+    },
+  },
+  SoloPanel: {
+    url: (page: string) => `/d-solo/${page}`,
+  },
+  PluginsList: {
+    page: 'Plugins list page',
+    list: 'Plugins list',
+    listItem: 'Plugins list item',
+    signatureErrorNotice: 'Unsigned plugins notice',
+  },
+  PluginPage: {
+    page: 'Plugin page',
+    signatureInfo: 'Plugin signature info',
+  },
+  PlaylistForm: {
+    name: 'Playlist name',
+    interval: 'Playlist interval',
+    itemRow: 'Playlist item row',
+    itemIdType: 'Playlist item dashboard by ID type',
+    itemTagType: 'Playlist item dashboard by Tag type',
+    itemMoveUp: 'Move playlist item order up',
+    itemMoveDown: 'Move playlist item order down',
+    itemDelete: 'Delete playlist item',
   },
 };
